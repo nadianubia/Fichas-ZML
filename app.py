@@ -81,12 +81,11 @@ def dado_valido(valor):
         return False
     return True
 
-# --- NOVO: Função para limpar o sufixo .0 de números inteiros mantendo decimais como 0.255 ---
+# Função para limpar o sufixo .0 de números inteiros mantendo decimais como 0.255
 def formatar_valor(valor):
     if not dado_valido(valor):
         return ""
     texto = str(valor).strip()
-    # Se terminar com .0, removemos o sufixo decimal
     if texto.endswith('.0'):
         return texto[:-2]
     return texto
@@ -158,11 +157,15 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
         for _, row in df_c.iterrows():
             loc = row.get('LOCALIDADE', '')
             tipo = row.get('CAPTAÇÃO - TIPO', row.get('CAPTACAO - TIPO', ''))
+            vaz_cap = formatar_valor(row.get('VAZÃO', row.get('VAZAO', '')))
             diam = formatar_valor(row.get('ADUTORA AB ATÉ EEAB - DIÂMETRO (MM)', row.get('ADUTORA AB ATE EEAB - DIAMETRO (MM)', '')))
+            obs_cap = row.get('OBSERVAÇÕES', row.get('OBSERVACOES', ''))
             
             if dado_valido(loc): pdf.cell(0, 5.5, f"Localidade/Sistema: {limpar_acentos(loc)}", ln=True)
             if dado_valido(tipo): pdf.cell(0, 5.5, f"Tipo de Captacao: {limpar_acentos(tipo)}", ln=True)
+            if dado_valido(vaz_cap): pdf.cell(0, 5.5, f"Vazao da Captacao: {vaz_cap} m3/h", ln=True)
             if dado_valido(diam): pdf.cell(0, 5.5, f"Adutora AB ate EEAB: Diametro {diam}mm", ln=True)
+            if dado_valido(obs_cap): pdf.cell(0, 5.5, f"Obs: {limpar_acentos(obs_cap)}", ln=True)
             pdf.ln(1.5)
         pdf.ln(3)
 
@@ -174,10 +177,12 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
             loc_eta = row.get('LOCALIDADE', '')
             bomba = row.get('EEAB - TIPO DA BOMBA PRINCIPAL', '')
             pot = formatar_valor(row.get('EEAB - POTÊNCIA PRINCIPAL (CV)', row.get('EEAB - POTENCIA PRINCIPAL (CV)', '')))
+            obs_eta = row.get('OBSERVAÇÕES', row.get('OBSERVACOES', ''))
             
             if dado_valido(loc_eta): pdf.cell(0, 5.5, f"Localidade da ETA: {limpar_acentos(loc_eta)}", ln=True)
             if dado_valido(bomba) or dado_valido(pot): 
                 pdf.cell(0, 5.5, f"Bomba Principal: {limpar_acentos(bomba)} | Potencia: {pot} cv", ln=True)
+            if dado_valido(obs_eta): pdf.cell(0, 5.5, f"Obs: {limpar_acentos(obs_eta)}", ln=True)
             pdf.ln(1.5)
         pdf.ln(3)
 
@@ -194,6 +199,7 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
             pot_b = formatar_valor(row.get('POTÊNCIA DA BOMBA (CV)', row.get('POTENCIA DA BOMBA (CV)')))
             vaz_b = formatar_valor(row.get('VAZÃO (M³/H)', row.get('VAZAO (M³/H)')))
             cc_eq = formatar_valor(row.get('CC EQUATORIAL'))
+            obs_poc = row.get('OBSERVAÇÕES', row.get('OBSERVACOES', ''))
             
             if dado_valido(cc_eq): detalhes.append(f"CC Equatorial: {cc_eq}")
             if dado_valido(pot_b): detalhes.append(f"Potencia: {pot_b} cv")
@@ -201,6 +207,8 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
             
             if detalhes:
                 pdf.cell(0, 5, "  " + " | ".join(detalhes), ln=True)
+            if dado_valido(obs_poc):
+                pdf.cell(0, 5, f"  Obs: {limpar_acentos(obs_poc)}", ln=True)
             pdf.ln(1)
             
     return pdf.output()
@@ -288,6 +296,9 @@ try:
                     if dado_valido(row.get('LOCALIDADE')): st.write(f"**Localidade/Sistema:** {row.get('LOCALIDADE')}")
                     if dado_valido(row.get('CAPTAÇÃO - TIPO', row.get('CAPTACAO - TIPO'))): st.write(f"**Tipo de Captação:** {row.get('CAPTAÇÃO - TIPO', row.get('CAPTACAO - TIPO'))}")
                     
+                    vaz_captacao = formatar_valor(row.get('VAZÃO', row.get('VAZAO')))
+                    if dado_valido(vaz_captacao): st.write(f"**Vazão da Captação:** {vaz_captacao} m³/h")
+                    
                     crivo = row.get('CAPTAÇÃO - POSSUI CRIVO', row.get('CAPTACAO - POSSUI CRIVO'))
                     mat_crivo = row.get('CAPTAÇÃO - MATERIAL CRIVO', row.get('CAPTACAO - MATERIAL CRIVO'))
                     if dado_valido(crivo):
@@ -306,6 +317,11 @@ try:
                     foto_cap = row.get('LINK DA FOTO')
                     if dado_valido(foto_cap):
                         st.image(str(foto_cap), caption="Foto da Captação", use_container_width=True)
+                        
+                    # ATUALIZADO: Exibição de Observações da Captação
+                    obs_c = row.get('OBSERVAÇÕES', row.get('OBSERVACOES'))
+                    if dado_valido(obs_c):
+                        st.info(f"**Obs:** {obs_c}")
                         
                     st.markdown("---")
                 st.markdown("</div>", unsafe_allow_html=True)
@@ -338,6 +354,11 @@ try:
                     foto_eta = row.get('LINK DA FOTO')
                     if dado_valido(foto_eta):
                         st.image(str(foto_eta), caption="Foto da ETA / EEAB", use_container_width=True)
+                        
+                    # ATUALIZADO: Exibição de Observações da ETA
+                    obs_e = row.get('OBSERVAÇÕES', row.get('OBSERVACOES'))
+                    if dado_valido(obs_e):
+                        st.info(f"**Obs:** {obs_e}")
                         
                     st.markdown("---")
                 st.markdown("</div>", unsafe_allow_html=True)
@@ -388,8 +409,9 @@ try:
                 if dado_valido(foto_poc):
                     st.image(str(foto_poc), caption=f"Foto - {id_pocio}", use_container_width=True)
                 
-                if 'OBSERVAÇÕES' in row and dado_valido(row['OBSERVAÇÕES']):
-                    st.info(f"**Obs:** {row['OBSERVAÇÕES']}")
+                obs_p = row.get('OBSERVAÇÕES', row.get('OBSERVACOES'))
+                if dado_valido(obs_p):
+                    st.info(f"**Obs:** {obs_p}")
                 st.markdown("</div>", unsafe_allow_html=True)
             idx += 1
 
