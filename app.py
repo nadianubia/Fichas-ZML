@@ -24,10 +24,10 @@ st.markdown("""
     }
     .card-title { color: #1F4E79; font-weight: bold; margin-bottom: 10px; }
     </style>
-""", unsafe_allowed_color_html=True)
+""", unsafe_allow_html=True)
 
 # Link da sua Planilha do Google (Substitua pelo link real da sua planilha!)
-URL_PLANILHA = "COLOQUE_O_LINK_DA_SUA_PLANILHA_AQUI"
+URL_PLANILHA = "https://docs.google.com/spreadsheets/d/1cUfZoPkVmiOivWXmRK4u3Vlp435f4_DeFzGvTFQOiNw/edit?gid=1077292522#gid=1077292522"
 
 # Detecta a logo na pasta (suporta png, jpg ou jpeg)
 LOGO_PATH = None
