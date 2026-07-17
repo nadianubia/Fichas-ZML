@@ -13,7 +13,17 @@ st.set_page_config(
 # Estilização CSS para corrigir margens, cores institucionais e criar os Cards visuais
 st.markdown("""
     <style>
-    .block-container { padding-top: 1rem; }
+    /* Ajustado para 4rem para dar o espaço necessário no topo e não cortar a logo */
+    .block-container { padding-top: 4rem; }
+    
+    /* Contêiner para centralizar verticalmente o texto em relação à logo */
+    .header-text-container {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        height: 100%;
+        padding-left: 10px;
+    }
     
     /* Cores e fontes para o cabeçalho ao lado da logo */
     .titulo-principal {
@@ -28,7 +38,7 @@ st.markdown("""
         color: #006699; /* Cor azul institucional da CASAL */
         font-size: 1.3rem;
         font-weight: bold;
-        margin-top: 5px;
+        margin-top: 8px;
         padding: 0;
     }
     
@@ -204,19 +214,22 @@ try:
         st.warning("Nenhum município localizado nas tabelas da planilha. Verifique o preenchimento.")
         st.stop()
 
-    # --- NOVO BLOCO CENTRALIZADO DO CABEÇALHO (LOGO AO LADO DO TEXTO) ---
-    # Cria uma estrutura de colunas para empurrar o bloco principal para o centro da tela
-    margem_esq, col_logo, col_texto, margem_dir = st.columns([1, 1.2, 5, 1])
+    # --- BLOCO CORRIGIDO DO CABEÇALHO ---
+    margem_esq, col_logo, col_texto, margem_dir = st.columns([1, 1.3, 5, 1])
     
     with col_logo:
         if LOGO_PATH:
-            st.image(LOGO_PATH, width=130)
+            # Mantém a proporção correta da logo sem cortar
+            st.image(LOGO_PATH, width=140)
             
     with col_texto:
-        # Espaçamento vertical para alinhar com o centro da logomarca
-        st.write("")
-        st.markdown("<div class='titulo-principal'>FICHAS TÉCNICAS DOS SISTEMAS ZML</div>", unsafe_allow_html=True)
-        st.markdown("<div class='subtitulo-principal'>CASAL - Companhia de Saneamento de Alagoas</div>", unsafe_allow_html=True)
+        # Contêiner HTML estruturado para alinhar perfeitamente à meia altura da logo
+        st.markdown("""
+            <div class='header-text-container'>
+                <div class='titulo-principal'>FICHAS TÉCNICAS DOS SISTEMAS ZML</div>
+                <div class='subtitulo-principal'>CASAL - Companhia de Saneamento de Alagoas</div>
+            </div>
+        """, unsafe_allow_html=True)
 
     st.markdown("---")
 
