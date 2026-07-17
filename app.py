@@ -31,8 +31,8 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Link da sua Planilha do Google (Troque caso mude o link da planilha original)
-URL_PLANILHA = "COLOQUE_O_LINK_DA_SUA_PLANILHA_AQUI"
+# Link oficial da sua Planilha do Google configurado
+URL_PLANILHA = "https://docs.google.com/spreadsheets/d/1cUfZoPkVmiOivWXmRK4u3Vlp435f4_DeFzGvTFQOiNw/edit?gid=1107305555#gid=1107305555"
 
 # Detecta a logo na pasta (suporta png, jpg ou jpeg)
 LOGO_PATH = None
@@ -187,7 +187,6 @@ try:
     
     with col_logo:
         if LOGO_PATH:
-            # st.image aplicada em container limpo para evitar cortes laterais
             st.markdown("<div class='logo-container'>", unsafe_allow_html=True)
             st.image(LOGO_PATH, width=130)
             st.markdown("</div>", unsafe_allow_html=True)
@@ -244,7 +243,7 @@ try:
                     st.write(f"**Possui Crivo:** {row.get('CAPTAÇÃO - POSSUI CRIVO', row.get('CAPTACAO - POSSUI CRIVO', '—'))} ({row.get('CAPTAÇÃO - MATERIAL CRIVO', row.get('CAPTACAO - MATERIAL CRIVO', '—'))})")
                     st.write(f"**Adutora AB até EEAB:** Diâmetro {row.get('ADUTORA AB ATÉ EEAB - DIÂMETRO (MM)', row.get('ADUTORA AB ATE EEAB - DIAMETRO (MM)', '—'))} mm | Comprimento: {row.get('ADUTORA AB ATÉ EEAB - COMPRIMENTO (M)', row.get('ADUTORA AB ATE EEAB - COMPRIMENTO (M)', '—'))} m")
                     st.markdown("---")
-                st.markdown("</div>", unsafe_allowed_color_html=True)
+                st.markdown("</div>", unsafe_allow_html=True)
 
         with col_eta:
             if not dados_eta.empty:
@@ -255,7 +254,7 @@ try:
                     st.write(f"**Bomba Principal:** {row.get('EEAB - TIPO DA BOMBA PRINCIPAL', row.get('EEAB - TIPO DA BOMBA PRINCIPAL', '—'))} | Potência: {row.get('EEAB - POTÊNCIA PRINCIPAL (CV)', row.get('EEAB - POTENCIA PRINCIPAL (CV)', '—'))} cv")
                     st.write(f"**Vazão e Altura:** {row.get('EEAB - VAZÃO PRINCIPAL (M³/H)', row.get('EEAB - VAZAO PRINCIPAL (M³/H)', '—'))} m³/h | {row.get('EEAB - ALTURA MANOMÉTRICA PRINCIPAL (MCA)', row.get('EEAB - ALTURA MANOMETRICA PRINCIPAL (MCA)', '—'))} mca")
                     st.markdown("---")
-                st.markdown("</div>", unsafe_allowed_color_html=True)
+                st.markdown("</div>", unsafe_allow_html=True)
 
     # 2. Seção de Adutoras Interligadas Especiais
     if not df_adutoras.empty:
@@ -269,11 +268,13 @@ try:
                 for _, row in dados_adu.iterrows():
                     st.warning(f"🚨 **Atenção:** Sistema Interligado! Origem: {row[c_origem]} ➔ Destino: {row[c_destino]} | Diâmetro: {row.get('DIÂMETRO DA ADUTORA (MM)', row.get('DIAMETRO DA ADUTORA (MM)', '—'))}mm")
 
-    # 3. Seção de Poços Artesianos
+    # 3. Seção de Poços Artesianos (Versão Manual Livre de Erros de Sintaxe)
     if not dados_poc.empty:
         st.header("🕳️ Sistema de Poços Artesianos (Captação Subterrânea)")
         cols_pocos = st.columns(3)
-        for idx, (_, row) in enumerate(dados_poc.iterrows():
+        
+        idx = 0
+        for _, row in dados_poc.iterrows():
             col_atual = cols_pocos[idx % 3]
             with col_atual:
                 id_pocio = row.get('IDENTIFICAÇÃO DO POÇO', row.get('IDENTIFICACAO DO POCO', '—'))
@@ -283,13 +284,14 @@ try:
                 st.write(f"**Altura da Bomba:** {row.get('ALTURA DA BOMBA (MCA)', row.get('ALTURA DA BOMBA (MCA)', '—'))} mca")
                 st.write(f"**Vazão Cadastrada:** {row.get('VAZÃO (M³/H)', row.get('VAZAO (M³/H)', '—'))} m³/h")
                 
-                link_curva = row.get('LINK/ARQUIVO CURVA DA BOMBA', row.get('LINK/ARQUIVO CURVA DA BOMBA', ''))
+                link_curva = row.get('LINK/ARQUIVO CURVA DA BOMBA', '')
                 if pd.notna(link_curva) and str(link_curva).strip() != "" and str(link_curva).strip() != "—":
                     st.link_button("📊 Ver Curva da Bomba", str(link_curva))
                 
                 if 'OBSERVAÇÕES' in row and pd.notna(row['OBSERVAÇÕES']) and str(row['OBSERVAÇÕES']).strip() != "":
                     st.info(f"**Obs:** {row['OBSERVAÇÕES']}")
                 st.markdown("</div>", unsafe_allow_html=True)
+            idx += 1
 
     if dados_cap.empty and dados_eta.empty and dados_poc.empty:
         st.info("Nenhuma estrutura localizada para este município nos registros da planilha.")
