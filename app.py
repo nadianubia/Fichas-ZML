@@ -14,10 +14,15 @@ st.set_page_config(
 st.markdown("""
     <style>
     .block-container { padding-top: 1rem; }
+    .header-centralizado {
+        text-align: center;
+        margin-bottom: 20px;
+    }
     .logo-container {
         display: flex;
         align-items: center;
         justify-content: center;
+        margin-bottom: 10px;
     }
     .card {
         background-color: #f8f9fa;
@@ -51,11 +56,17 @@ def converter_link_sheets(url):
 
 base_url = converter_link_sheets(URL_PLANILHA)
 
-# Função auxiliar para validar se um dado existe e é válido (evita exibir 'nan' ou vazio)
+# Função auxiliar para validar se um dado existe e é válido
 def dado_valido(valor):
     if pd.isna(valor) or str(valor).strip() == "" or str(valor).strip().lower() == "nan" or str(valor).strip() == "—":
         return False
     return True
+
+# Função para remover ou substituir acentos apenas para exibição no PDF padrão do FPDF
+def limpar_acentos(texto):
+    if not texto: return ""
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize('NFD', str(texto)) if unicodedata.category(c) != 'Mn')
 
 # Carrega as abas oficiais do projeto tratando colunas para maiúsculo
 @st.cache_data(ttl=60)
@@ -86,10 +97,12 @@ def carregar_dados():
         
     return df_cap, df_eta, df_poc, df_adu
 
-# --- FUNÇÃO PARA GERAR O PDF DINÂMICO (CORRIGIDA SEM CARACTERES ESPECIAIS) ---
+# --- FUNÇÃO PARA GERAR O PDF DINÂMICO ---
 def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
     pdf = FPDF()
     pdf.add_page()
+    
+    mun_limpo = limpar_acentos(municipio).upper()
     
     if LOGO_PATH:
         pdf.image(LOGO_PATH, x=10, y=10, w=30)
@@ -99,11 +112,11 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
         pdf.cell(0, 7, "CASAL - COMPANHIA DE SANEAMENTO DE ALAGOAS", ln=True)
         pdf.set_x(45)
         pdf.set_font("Helvetica", "B", 11)
-        pdf.cell(0, 7, f"FICHA TECNICA OPERACIONAL: {municipio.upper()}", ln=True)
+        pdf.cell(0, 7, f"FICHA TECNICA OPERACIONAL: {mun_limpo}", ln=True)
     else:
         pdf.set_font("Helvetica", "B", 14)
         pdf.cell(0, 10, "CASAL - COMPANHIA DE SANEAMENTO DE ALAGOAS", ln=True, align="C")
-        pdf.cell(0, 10, f"FICHA TECNICA OPERACIONAL: {municipio.upper()}", ln=True, align="C")
+        pdf.cell(0, 10, f"FICHA TECNICA OPERACIONAL: {mun_limpo}", ln=True, align="C")
         
     pdf.ln(12)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
@@ -114,9 +127,13 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
         pdf.cell(0, 7, "1. DADOS DA CAPTACAO SUPERFICIAL", ln=True)
         pdf.set_font("Helvetica", "", 10)
         for _, row in df_c.iterrows():
-            if dado_valido(row.get('LOCALIDADE')): pdf.cell(0, 5.5, f"Localidade/Sistema: {row.get('LOCALIDADE')}", ln=True)
-            if dado_valido(row.get('CAPTAÇÃO - TIPO')): pdf.cell(0, 5.5, f"Tipo de Captacao: {row.get('CAPTAÇÃO - TIPO')}", ln=True)
-            if dado_valido(row.get('ADUTORA AB ATE EEAB - DIAMETRO (MM)')): pdf.cell(0, 5.5, f"Adutora AB ate EEAB: Diâmetro {row.get('ADUTORA AB ATÉ EEAB - DIÂMETRO (MM)', row.get('ADUTORA AB ATE EEAB - DIAMETRO (MM)'))}mm", ln=True)
+            loc = row.get('LOCALIDADE', '')
+            tipo = row.get('CAPTAÇÃO - TIPO', row.get('CAPTACAO - TIPO', ''))
+            diam = row.get('ADUTORA AB ATÉ EEAB - DIÂMETRO (MM)', row.get('ADUTORA AB ATE EEAB - DIAMETRO (MM)', ''))
+            
+            if dado_valido(loc): pdf.cell(0, 5.5, f"Localidade/Sistema: {limpar_acentos(loc)}", ln=True)
+            if dado_valido(tipo): pdf.cell(0, 5.5, f"Tipo de Captacao: {limpar_acentos(tipo)}", ln=True)
+            if dado_valido(diam): pdf.cell(0, 5.5, f"Adutora AB ate EEAB: Diametro {diam}mm", ln=True)
             pdf.ln(1.5)
         pdf.ln(3)
 
@@ -125,8 +142,13 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
         pdf.cell(0, 7, "2. ESTACAO DE TRATAMENTO DE AGUA (ETA / EEAB)", ln=True)
         pdf.set_font("Helvetica", "", 10)
         for _, row in df_e.iterrows():
-            if dado_valido(row.get('LOCALIDADE')): pdf.cell(0, 5.5, f"Localidade da ETA: {row.get('LOCALIDADE')}", ln=True)
-            if dado_valido(row.get('EEAB - TIPO DA BOMBA PRINCIPAL')): pdf.cell(0, 5.5, f"Bomba Principal: {row.get('EEAB - TIPO DA BOMBA PRINCIPAL')} | Potencia: {row.get('EEAB - POTÊNCIA PRINCIPAL (CV)', row.get('EEAB - POTENCIA PRINCIPAL (CV)'))} cv", ln=True)
+            loc_eta = row.get('LOCALIDADE', '')
+            bomba = row.get('EEAB - TIPO DA BOMBA PRINCIPAL', '')
+            pot = row.get('EEAB - POTÊNCIA PRINCIPAL (CV)', row.get('EEAB - POTENCIA PRINCIPAL (CV)', ''))
+            
+            if dado_valido(loc_eta): pdf.cell(0, 5.5, f"Localidade da ETA: {limpar_acentos(loc_eta)}", ln=True)
+            if dado_valido(bomba) or dado_valido(pot): 
+                pdf.cell(0, 5.5, f"Bomba Principal: {limpar_acentos(bomba)} | Potencia: {pot} cv", ln=True)
             pdf.ln(1.5)
         pdf.ln(3)
 
@@ -136,12 +158,17 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
         for _, row in df_p.iterrows():
             id_p = row.get('IDENTIFICAÇÃO DO POÇO', row.get('IDENTIFICACAO DO POCO', 'Poco'))
             pdf.set_font("Helvetica", "B", 10)
-            pdf.cell(0, 5.5, f"Poco: {id_p}", ln=True)
+            pdf.cell(0, 5.5, f"Poco: {limpar_acentos(id_p)}", ln=True)
             pdf.set_font("Helvetica", "", 10)
             
             detalhes = []
-            if dado_valido(row.get('POTÊNCIA DA BOMBA (CV)', row.get('POTENCIA DA BOMBA (CV)'))): detalhes.append(f"Potencia: {row.get('POTÊNCIA DA BOMBA (CV)', row.get('POTENCIA DA BOMBA (CV)'))} cv")
-            if dado_valido(row.get('VAZÃO (M³/H)', row.get('VAZAO (M³/H)'))): detalhes.append(f"Vazao: {row.get('VAZÃO (M³/H)', row.get('VAZAO (M³/H)'))} m3/h")
+            pot_b = row.get('POTÊNCIA DA BOMBA (CV)', row.get('POTENCIA DA BOMBA (CV)'))
+            vaz_b = row.get('VAZÃO (M³/H)', row.get('VAZAO (M³/H)'))
+            cc_eq = row.get('CC EQUATORIAL')
+            
+            if dado_valido(cc_eq): detalhes.append(f"CC Equatorial: {cc_eq}")
+            if dado_valido(pot_b): detalhes.append(f"Potencia: {pot_b} cv")
+            if dado_valido(vaz_b): detalhes.append(f"Vazao: {vaz_b} m3/h")
             
             if detalhes:
                 pdf.cell(0, 5, "  " + " | ".join(detalhes), ln=True)
@@ -152,12 +179,11 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
 try:
     df_captacao, df_eta_eeab, df_pocos, df_adutoras = carregar_dados()
     
-    # Padronização de nomes das colunas de Município para evitar problemas de acentuação
+    # Padronização de nomes das colunas de Município
     for df in [df_captacao, df_eta_eeab, df_pocos]:
         if 'MUNICIPIO' in df.columns and 'MUNICÍPIO' not in df.columns:
             df.rename(columns={'MUNICIPIO': 'MUNICÍPIO'}, inplace=True)
             
-    # Junta e monta a lista de cidades únicas da sua planilha
     todos_muns = []
     for df in [df_captacao, df_eta_eeab, df_pocos]:
         if 'MUNICÍPIO' in df.columns:
@@ -169,19 +195,15 @@ try:
         st.warning("Nenhum município localizado nas tabelas da planilha. Verifique o preenchimento.")
         st.stop()
 
-    # --- RENDERIZAÇÃO DO CABEÇALHO (LOGO ALINHADA) ---
-    st.write("")
-    col_logo, col_titulo = st.columns([1, 4])
-    
-    with col_logo:
-        if LOGO_PATH:
-            st.markdown("<div class='logo-container'>", unsafe_allow_html=True)
-            st.image(LOGO_PATH, width=130)
-            st.markdown("</div>", unsafe_allow_html=True)
-            
-    with col_titulo:
-        st.title("FICHA TÉCNICA DOS SISTEMAS")
-        st.subheader("CASAL - Companhia de Saneamento de Alagoas")
+    # --- TÍTULO CENTRALIZADO ---
+    st.markdown("<div class='header-centralizado'>", unsafe_allow_html=True)
+    if LOGO_PATH:
+        st.markdown("<div class='logo-container'>", unsafe_allow_html=True)
+        st.image(LOGO_PATH, width=130)
+        st.markdown("</div>", unsafe_allow_html=True)
+    st.title("FICHA TÉCNICA DOS SISTEMAS")
+    st.subheader("CASAL - Companhia de Saneamento de Alagoas")
+    st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("---")
 
@@ -194,7 +216,6 @@ try:
             todos_municipios
         )
     
-    # Filtragem robusta ignorando espaços vazios e diferenças de caixa alta/baixa
     dados_cap = df_captacao[df_captacao['MUNICÍPIO'].astype(str).str.strip().str.upper() == municipio_selecionado] if 'MUNICÍPIO' in df_captacao.columns else pd.DataFrame()
     dados_eta = df_eta_eeab[df_eta_eeab['MUNICÍPIO'].astype(str).str.strip().str.upper() == municipio_selecionado] if 'MUNICÍPIO' in df_eta_eeab.columns else pd.DataFrame()
     dados_poc = df_pocos[df_pocos['MUNICÍPIO'].astype(str).str.strip().str.upper() == municipio_selecionado] if 'MUNICÍPIO' in df_pocos.columns else pd.DataFrame()
@@ -202,20 +223,24 @@ try:
     with col_btn:
         st.write("") 
         st.write("") 
-        # Geração do PDF sob demanda baseado no filtro selecionado
-        pdf_data = gerar_pdf_ficha(municipio_selecionado, dados_cap, dados_eta, dados_poc, df_adutoras)
-        st.download_button(
-            label="📥 Salvar Ficha em PDF",
-            data=bytes(pdf_data),
-            file_name=f"Ficha_Tecnica_{municipio_selecionado.replace(' ', '_')}.pdf",
-            mime="application/pdf",
-            use_container_width=True
-        )
+        try:
+            pdf_out = gerar_pdf_ficha(municipio_selecionado, dados_cap, dados_eta, dados_poc, df_adutoras)
+            pdf_bytes = bytes(pdf_out) if isinstance(pdf_out, (bytearray, bytes)) else pdf_out.encode('latin1', errors='ignore') if hasattr(pdf_out, 'encode') else b""
+            
+            st.download_button(
+                label="📥 Salvar Ficha em PDF",
+                data=pdf_bytes,
+                file_name=f"Ficha_Tecnica_{municipio_selecionado.replace(' ', '_')}.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
+        except Exception as pdf_err:
+            st.error("Erro ao gerar botão de PDF")
 
     st.write(f"Exibindo dados operacionais atuais para: **{municipio_selecionado}**")
     st.markdown("---")
 
-    # --- INTERFACE ADAPTATIVA DO PAINEL (Layout Dinâmico Ocultando Vazios) ---
+    # --- INTERFACE ADAPTATIVA DO PAINEL ---
     
     # 1. Seção Superficial (Captação e ETA)
     if not dados_cap.empty or not dados_eta.empty:
@@ -229,7 +254,6 @@ try:
                     if dado_valido(row.get('LOCALIDADE')): st.write(f"**Localidade/Sistema:** {row.get('LOCALIDADE')}")
                     if dado_valido(row.get('CAPTAÇÃO - TIPO', row.get('CAPTACAO - TIPO'))): st.write(f"**Tipo de Captação:** {row.get('CAPTAÇÃO - TIPO', row.get('CAPTACAO - TIPO'))}")
                     
-                    # Validação composta para Crivo
                     crivo = row.get('CAPTAÇÃO - POSSUI CRIVO', row.get('CAPTACAO - POSSUI CRIVO'))
                     mat_crivo = row.get('CAPTAÇÃO - MATERIAL CRIVO', row.get('CAPTACAO - MATERIAL CRIVO'))
                     if dado_valido(crivo):
@@ -237,7 +261,6 @@ try:
                         if dado_valido(mat_crivo): txt_crivo += f" ({mat_crivo})"
                         st.write(txt_crivo)
                     
-                    # Validação composta para Adutora
                     diam = row.get('ADUTORA AB ATÉ EEAB - DIÂMETRO (MM)', row.get('ADUTORA AB ATE EEAB - DIAMETRO (MM)'))
                     comp = row.get('ADUTORA AB ATÉ EEAB - COMPRIMENTO (M)', row.get('ADUTORA AB ATE EEAB - COMPRIMENTO (M)'))
                     if dado_valido(diam) or dado_valido(comp):
@@ -245,6 +268,11 @@ try:
                         if dado_valido(diam): txt_adu += f" Diâmetro {diam} mm"
                         if dado_valido(comp): txt_adu += f" | Comprimento: {comp} m"
                         st.write(txt_adu)
+                    
+                    foto_cap = row.get('LINK DA FOTO')
+                    if dado_valido(foto_cap):
+                        st.image(str(foto_cap), caption="Foto da Captação", use_container_width=True)
+                        
                     st.markdown("---")
                 st.markdown("</div>", unsafe_allow_html=True)
 
@@ -270,6 +298,11 @@ try:
                         if dado_valido(vaz): txt_v += f" {vaz} m³/h"
                         if dado_valido(alt): txt_v += f" | {alt} mca"
                         st.write(txt_v)
+                        
+                    foto_eta = row.get('LINK DA FOTO')
+                    if dado_valido(foto_eta):
+                        st.image(str(foto_eta), caption="Foto da ETA / EEAB", use_container_width=True)
+                        
                     st.markdown("---")
                 st.markdown("</div>", unsafe_allow_html=True)
 
@@ -279,13 +312,13 @@ try:
         c_destino = 'MUNICÍPIO DESTINO' if 'MUNICÍPIO DESTINO' in df_adutoras.columns else 'MUNICIPIO DESTINO'
         if c_origem in df_adutoras.columns and c_destino in df_adutoras.columns:
             dados_adu = df_adutoras[(df_adutoras[c_origem].astype(str).str.strip().str.upper() == municipio_selecionado) | 
-                                 (df_adutoras[c_destino].astype(str).str.strip().str.upper() == municipio_selecionado)]
+                                   (df_adutoras[c_destino].astype(str).str.strip().str.upper() == municipio_selecionado)]
             if not dados_adu.empty:
                 st.header("🔗 Sistemas Interligados / Adutoras de Exportação")
                 for _, row in dados_adu.iterrows():
                     st.warning(f"🚨 **Atenção:** Sistema Interligado! Origem: {row[c_origem]} ➔ Destino: {row[c_destino]} | Diâmetro: {row.get('DIÂMETRO DA ADUTORA (MM)', row.get('DIAMETRO DA ADUTORA (MM)', '—'))}mm")
 
-    # 3. Seção de Poços Artesianos
+    # 3. Seção de Poços Artesianos (Com a nova coluna CC Equatorial)
     if not dados_poc.empty:
         st.header("🕳️ Sistema de Poços Artesianos (Captação Subterrânea)")
         cols_pocos = st.columns(3)
@@ -298,6 +331,11 @@ try:
                 st.markdown(f"<div class='card'><div class='card-title'>📍 {id_pocio}</div>", unsafe_allow_html=True)
                 
                 if dado_valido(row.get('LOCALIDADE/REGIÃO', row.get('LOCALIDADE/REGIAO'))): st.write(f"**Região/Localidade:** {row.get('LOCALIDADE/REGIÃO', row.get('LOCALIDADE/REGIAO'))}")
+                
+                # --- EXIBIÇÃO DA NOVA COLUNA CC EQUATORIAL ---
+                cc_equatorial = row.get('CC EQUATORIAL')
+                if dado_valido(cc_equatorial): st.write(f"**⚡ CC Equatorial:** {cc_equatorial}")
+                
                 if dado_valido(row.get('POTÊNCIA DA BOMBA (CV)', row.get('POTENCIA DA BOMBA (CV)'))): st.write(f"**Potência da Bomba:** {row.get('POTÊNCIA DA BOMBA (CV)', row.get('POTENCIA DA BOMBA (CV)'))} cv")
                 if dado_valido(row.get('ALTURA DA BOMBA (MCA)', row.get('ALTURA DA BOMBA (MCA)'))): st.write(f"**Altura da Bomba:** {row.get('ALTURA DA BOMBA (MCA)', row.get('ALTURA DA BOMBA (MCA)'))} mca")
                 if dado_valido(row.get('VAZÃO (M³/H)', row.get('VAZAO (M³/H)'))): st.write(f"**Vazão Cadastrada:** {row.get('VAZÃO (M³/H)', row.get('VAZAO (M³/H)'))} m³/h")
@@ -305,6 +343,10 @@ try:
                 link_curva = row.get('LINK/ARQUIVO CURVA DA BOMBA', '')
                 if dado_valido(link_curva):
                     st.link_button("📊 Ver Curva da Bomba", str(link_curva))
+                
+                foto_poc = row.get('LINK DA FOTO')
+                if dado_valido(foto_poc):
+                    st.image(str(foto_poc), caption=f"Foto - {id_pocio}", use_container_width=True)
                 
                 if 'OBSERVAÇÕES' in row and dado_valido(row['OBSERVAÇÕES']):
                     st.info(f"**Obs:** {row['OBSERVAÇÕES']}")
