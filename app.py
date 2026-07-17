@@ -5,7 +5,7 @@ import os
 
 # Configuração da página para modo amplo (wide)
 st.set_page_config(
-    page_title="CASAL - Fichas Técnicas dos Sistemas - ZML",
+    page_title="CASAL - Fichas Técnicas dos Sistemas ZML",
     page_icon="🚰",
     layout="wide"
 )
@@ -16,13 +16,26 @@ st.markdown("""
     .block-container { padding-top: 1rem; }
     .header-centralizado {
         text-align: center;
-        margin-bottom: 20px;
+        margin-bottom: 25px;
+        width: 100%;
     }
     .logo-container {
         display: flex;
-        align-items: center;
         justify-content: center;
-        margin-bottom: 10px;
+        align-items: center;
+        margin-bottom: 15px;
+    }
+    .titulo-principal {
+        color: #1F4E79;
+        font-size: 2.5rem;
+        font-weight: bold;
+        margin: 10px 0 5px 0;
+    }
+    .subtitulo-principal {
+        color: #4A4A4A;
+        font-size: 1.5rem;
+        font-weight: normal;
+        margin: 0 0 10px 0;
     }
     .card {
         background-color: #f8f9fa;
@@ -112,11 +125,11 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
         pdf.cell(0, 7, "CASAL - COMPANHIA DE SANEAMENTO DE ALAGOAS", ln=True)
         pdf.set_x(45)
         pdf.set_font("Helvetica", "B", 11)
-        pdf.cell(0, 7, f"FICHA TECNICA OPERACIONAL: {mun_limpo}", ln=True)
+        pdf.cell(0, 7, f"FICHA TECNICA DOS SISTEMAS ZML: {mun_limpo}", ln=True)
     else:
         pdf.set_font("Helvetica", "B", 14)
         pdf.cell(0, 10, "CASAL - COMPANHIA DE SANEAMENTO DE ALAGOAS", ln=True, align="C")
-        pdf.cell(0, 10, f"FICHA TECNICA OPERACIONAL: {mun_limpo}", ln=True, align="C")
+        pdf.cell(0, 10, f"FICHA TECNICA DOS SISTEMAS ZML: {mun_limpo}", ln=True, align="C")
         
     pdf.ln(12)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
@@ -195,14 +208,20 @@ try:
         st.warning("Nenhum município localizado nas tabelas da planilha. Verifique o preenchimento.")
         st.stop()
 
-    # --- TÍTULO CENTRALIZADO ---
+    # --- BLOCO CORRIGIDO PARA CENTRALIZAR LOGO E TÍTULO COM O SUFIXO ZML ---
     st.markdown("<div class='header-centralizado'>", unsafe_allow_html=True)
     if LOGO_PATH:
-        st.markdown("<div class='logo-container'>", unsafe_allow_html=True)
-        st.image(LOGO_PATH, width=130)
-        st.markdown("</div>", unsafe_allow_html=True)
-    st.title("FICHA TÉCNICA DOS SISTEMAS")
-    st.subheader("CASAL - Companhia de Saneamento de Alagoas")
+        # Usa colunas virtuais puramente no HTML para garantir o alinhamento da imagem ao centro
+        st.markdown(f"""
+            <div class='logo-container'>
+                <img src='data:image/png;base64' style='display:block; margin:auto;' width='130'>
+            </div>
+        """, unsafe_allow_html=True)
+        # Fallback padrão caso precise puxar o arquivo direto
+        st.image(LOGO_PATH, width=130, use_container_width=False)
+        
+    st.markdown("<div class='titulo-principal'>FICHAS TÉCNICAS DOS SISTEMAS ZML</div>", unsafe_allow_html=True)
+    st.markdown("<div class='subtitulo-principal'>CASAL - Companhia de Saneamento de Alagoas</div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("---")
@@ -316,9 +335,9 @@ try:
             if not dados_adu.empty:
                 st.header("🔗 Sistemas Interligados / Adutoras de Exportação")
                 for _, row in dados_adu.iterrows():
-                    st.warning(f"🚨 **Atenção:** Sistema Interligado! Origem: {row[c_origem]} ➔ Destino: {row[c_destino]} | Diâmetro: {row.get('DIÂMETRO DA ADUTORA (MM)', row.get('DIAMETRO DA ADUTORA (MM)', '—'))}mm")
+                    st.warning(f"🚨 **Atenção:** Systema Interligado! Origem: {row[c_origem]} ➔ Destino: {row[c_destino]} | Diâmetro: {row.get('DIÂMETRO DA ADUTORA (MM)', row.get('DIAMETRO DA ADUTORA (MM)', '—'))}mm")
 
-    # 3. Seção de Poços Artesianos (Com a nova coluna CC Equatorial)
+    # 3. Seção de Poços Artesianos
     if not dados_poc.empty:
         st.header("🕳️ Sistema de Poços Artesianos (Captação Subterrânea)")
         cols_pocos = st.columns(3)
@@ -332,7 +351,6 @@ try:
                 
                 if dado_valido(row.get('LOCALIDADE/REGIÃO', row.get('LOCALIDADE/REGIAO'))): st.write(f"**Região/Localidade:** {row.get('LOCALIDADE/REGIÃO', row.get('LOCALIDADE/REGIAO'))}")
                 
-                # --- EXIBIÇÃO DA NOVA COLUNA CC EQUATORIAL ---
                 cc_equatorial = row.get('CC EQUATORIAL')
                 if dado_valido(cc_equatorial): st.write(f"**⚡ CC Equatorial:** {cc_equatorial}")
                 
@@ -358,4 +376,3 @@ try:
 
 except Exception as e:
     st.error(f"Erro na leitura dos dados: {e}")
-    st.warning("Verifique se o link da planilha foi configurado corretamente e se as abas contêm as colunas 'MUNICÍPIO'.")
