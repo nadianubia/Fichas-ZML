@@ -5,7 +5,7 @@ import os
 
 # Configuração da página para modo amplo (wide)
 st.set_page_config(
-    page_title="CASAL - Fichas Técnicas dos Sistemas",
+    page_title="CASAL - Fichas Técnicas dos Sistemas - ZML",
     page_icon="🚰",
     layout="wide"
 )
