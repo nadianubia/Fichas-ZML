@@ -10,33 +10,29 @@ st.set_page_config(
     layout="wide"
 )
 
-# Estilização CSS para corrigir margens e criar os Cards visuais
+# Estilização CSS para corrigir margens, cores institucionais e criar os Cards visuais
 st.markdown("""
     <style>
     .block-container { padding-top: 1rem; }
-    .header-centralizado {
-        text-align: center;
-        margin-bottom: 25px;
-        width: 100%;
-    }
-    .logo-container {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        margin-bottom: 15px;
-    }
+    
+    /* Cores e fontes para o cabeçalho ao lado da logo */
     .titulo-principal {
         color: #1F4E79;
-        font-size: 2.5rem;
+        font-size: 2.3rem;
         font-weight: bold;
-        margin: 10px 0 5px 0;
+        margin: 0;
+        padding: 0;
+        line-height: 1.2;
     }
     .subtitulo-principal {
-        color: #4A4A4A;
-        font-size: 1.5rem;
-        font-weight: normal;
-        margin: 0 0 10px 0;
+        color: #006699; /* Cor azul institucional da CASAL */
+        font-size: 1.3rem;
+        font-weight: bold;
+        margin-top: 5px;
+        padding: 0;
     }
+    
+    /* Configuração visual dos Cards */
     .card {
         background-color: #f8f9fa;
         padding: 20px;
@@ -208,21 +204,19 @@ try:
         st.warning("Nenhum município localizado nas tabelas da planilha. Verifique o preenchimento.")
         st.stop()
 
-    # --- BLOCO CORRIGIDO PARA CENTRALIZAR LOGO E TÍTULO COM O SUFIXO ZML ---
-    st.markdown("<div class='header-centralizado'>", unsafe_allow_html=True)
-    if LOGO_PATH:
-        # Usa colunas virtuais puramente no HTML para garantir o alinhamento da imagem ao centro
-        st.markdown(f"""
-            <div class='logo-container'>
-                <img src='data:image/png;base64' style='display:block; margin:auto;' width='130'>
-            </div>
-        """, unsafe_allow_html=True)
-        # Fallback padrão caso precise puxar o arquivo direto
-        st.image(LOGO_PATH, width=130, use_container_width=False)
-        
-    st.markdown("<div class='titulo-principal'>FICHAS TÉCNICAS DOS SISTEMAS ZML</div>", unsafe_allow_html=True)
-    st.markdown("<div class='subtitulo-principal'>CASAL - Companhia de Saneamento de Alagoas</div>", unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+    # --- NOVO BLOCO CENTRALIZADO DO CABEÇALHO (LOGO AO LADO DO TEXTO) ---
+    # Cria uma estrutura de colunas para empurrar o bloco principal para o centro da tela
+    margem_esq, col_logo, col_texto, margem_dir = st.columns([1, 1.2, 5, 1])
+    
+    with col_logo:
+        if LOGO_PATH:
+            st.image(LOGO_PATH, width=130)
+            
+    with col_texto:
+        # Espaçamento vertical para alinhar com o centro da logomarca
+        st.write("")
+        st.markdown("<div class='titulo-principal'>FICHAS TÉCNICAS DOS SISTEMAS ZML</div>", unsafe_allow_html=True)
+        st.markdown("<div class='subtitulo-principal'>CASAL - Companhia de Saneamento de Alagoas</div>", unsafe_allow_html=True)
 
     st.markdown("---")
 
@@ -335,7 +329,7 @@ try:
             if not dados_adu.empty:
                 st.header("🔗 Sistemas Interligados / Adutoras de Exportação")
                 for _, row in dados_adu.iterrows():
-                    st.warning(f"🚨 **Atenção:** Systema Interligado! Origem: {row[c_origem]} ➔ Destino: {row[c_destino]} | Diâmetro: {row.get('DIÂMETRO DA ADUTORA (MM)', row.get('DIAMETRO DA ADUTORA (MM)', '—'))}mm")
+                    st.warning(f"🚨 **Atenção:** Sistema Interligado! Origem: {row[c_origem]} ➔ Destino: {row[c_destino]} | Diâmetro: {row.get('DIÂMETRO DA ADUTORA (MM)', row.get('DIAMETRO DA ADUTORA (MM)', '—'))}mm")
 
     # 3. Seção de Poços Artesianos
     if not dados_poc.empty:
