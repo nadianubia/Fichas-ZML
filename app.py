@@ -81,6 +81,16 @@ def dado_valido(valor):
         return False
     return True
 
+# --- NOVO: Função para limpar o sufixo .0 de números inteiros mantendo decimais como 0.255 ---
+def formatar_valor(valor):
+    if not dado_valido(valor):
+        return ""
+    texto = str(valor).strip()
+    # Se terminar com .0, removemos o sufixo decimal
+    if texto.endswith('.0'):
+        return texto[:-2]
+    return texto
+
 # Função para remover ou substituir acentos apenas para exibição no PDF padrão do FPDF
 def limpar_acentos(texto):
     if not texto: return ""
@@ -148,7 +158,7 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
         for _, row in df_c.iterrows():
             loc = row.get('LOCALIDADE', '')
             tipo = row.get('CAPTAÇÃO - TIPO', row.get('CAPTACAO - TIPO', ''))
-            diam = row.get('ADUTORA AB ATÉ EEAB - DIÂMETRO (MM)', row.get('ADUTORA AB ATE EEAB - DIAMETRO (MM)', ''))
+            diam = formatar_valor(row.get('ADUTORA AB ATÉ EEAB - DIÂMETRO (MM)', row.get('ADUTORA AB ATE EEAB - DIAMETRO (MM)', '')))
             
             if dado_valido(loc): pdf.cell(0, 5.5, f"Localidade/Sistema: {limpar_acentos(loc)}", ln=True)
             if dado_valido(tipo): pdf.cell(0, 5.5, f"Tipo de Captacao: {limpar_acentos(tipo)}", ln=True)
@@ -163,7 +173,7 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
         for _, row in df_e.iterrows():
             loc_eta = row.get('LOCALIDADE', '')
             bomba = row.get('EEAB - TIPO DA BOMBA PRINCIPAL', '')
-            pot = row.get('EEAB - POTÊNCIA PRINCIPAL (CV)', row.get('EEAB - POTENCIA PRINCIPAL (CV)', ''))
+            pot = formatar_valor(row.get('EEAB - POTÊNCIA PRINCIPAL (CV)', row.get('EEAB - POTENCIA PRINCIPAL (CV)', '')))
             
             if dado_valido(loc_eta): pdf.cell(0, 5.5, f"Localidade da ETA: {limpar_acentos(loc_eta)}", ln=True)
             if dado_valido(bomba) or dado_valido(pot): 
@@ -181,9 +191,9 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
             pdf.set_font("Helvetica", "", 10)
             
             detalhes = []
-            pot_b = row.get('POTÊNCIA DA BOMBA (CV)', row.get('POTENCIA DA BOMBA (CV)'))
-            vaz_b = row.get('VAZÃO (M³/H)', row.get('VAZAO (M³/H)'))
-            cc_eq = row.get('CC EQUATORIAL')
+            pot_b = formatar_valor(row.get('POTÊNCIA DA BOMBA (CV)', row.get('POTENCIA DA BOMBA (CV)')))
+            vaz_b = formatar_valor(row.get('VAZÃO (M³/H)', row.get('VAZAO (M³/H)')))
+            cc_eq = formatar_valor(row.get('CC EQUATORIAL'))
             
             if dado_valido(cc_eq): detalhes.append(f"CC Equatorial: {cc_eq}")
             if dado_valido(pot_b): detalhes.append(f"Potencia: {pot_b} cv")
@@ -214,16 +224,14 @@ try:
         st.warning("Nenhum município localizado nas tabelas da planilha. Verifique o preenchimento.")
         st.stop()
 
-    # --- BLOCO CORRIGIDO DO CABEÇALHO ---
+    # --- BLOCO DO CABEÇALHO ---
     margem_esq, col_logo, col_texto, margem_dir = st.columns([1, 1.3, 5, 1])
     
     with col_logo:
         if LOGO_PATH:
-            # Mantém a proporção correta da logo sem cortar
             st.image(LOGO_PATH, width=140)
             
     with col_texto:
-        # Contêiner HTML estruturado para alinhar perfeitamente à meia altura da logo
         st.markdown("""
             <div class='header-text-container'>
                 <div class='titulo-principal'>FICHAS TÉCNICAS DOS SISTEMAS ZML</div>
@@ -287,8 +295,8 @@ try:
                         if dado_valido(mat_crivo): txt_crivo += f" ({mat_crivo})"
                         st.write(txt_crivo)
                     
-                    diam = row.get('ADUTORA AB ATÉ EEAB - DIÂMETRO (MM)', row.get('ADUTORA AB ATE EEAB - DIAMETRO (MM)'))
-                    comp = row.get('ADUTORA AB ATÉ EEAB - COMPRIMENTO (M)', row.get('ADUTORA AB ATE EEAB - COMPRIMENTO (M)'))
+                    diam = formatar_valor(row.get('ADUTORA AB ATÉ EEAB - DIÂMETRO (MM)', row.get('ADUTORA AB ATE EEAB - DIAMETRO (MM)')))
+                    comp = formatar_valor(row.get('ADUTORA AB ATÉ EEAB - COMPRIMENTO (M)', row.get('ADUTORA AB ATE EEAB - COMPRIMENTO (M)')))
                     if dado_valido(diam) or dado_valido(comp):
                         txt_adu = "**Adutora AB até EEAB:**"
                         if dado_valido(diam): txt_adu += f" Diâmetro {diam} mm"
@@ -307,18 +315,20 @@ try:
                 st.markdown("<div class='card'><div class='card-title'>⚡ ESTAÇÃO DE TRATAMENTO DE ÁGUA (ETA / EEAB)</div>", unsafe_allow_html=True)
                 for _, row in dados_eta.iterrows():
                     if dado_valido(row.get('LOCALIDADE')): st.write(f"**Localidade da ETA:** {row.get('LOCALIDADE')}")
-                    if dado_valido(row.get('CC EQUATORIAL ETA')): st.write(f"**CC Equatorial ETA:** {row.get('CC EQUATORIAL ETA')}")
+                    
+                    cc_eq_eta = formatar_valor(row.get('CC EQUATORIAL ETA'))
+                    if dado_valido(cc_eq_eta): st.write(f"**CC Equatorial ETA:** {cc_eq_eta}")
                     
                     bomba = row.get('EEAB - TIPO DA BOMBA PRINCIPAL')
-                    pot = row.get('EEAB - POTÊNCIA PRINCIPAL (CV)', row.get('EEAB - POTENCIA PRINCIPAL (CV)'))
+                    pot = formatar_valor(row.get('EEAB - POTÊNCIA PRINCIPAL (CV)', row.get('EEAB - POTENCIA PRINCIPAL (CV)')))
                     if dado_valido(bomba) or dado_valido(pot):
                         txt_b = "**Bomba Principal:**"
                         if dado_valido(bomba): txt_b += f" {bomba}"
                         if dado_valido(pot): txt_b += f" | Potência: {pot} cv"
                         st.write(txt_b)
                         
-                    vaz = row.get('EEAB - VAZÃO PRINCIPAL (M³/H)', row.get('EEAB - VAZAO PRINCIPAL (M³/H)'))
-                    alt = row.get('EEAB - ALTURA MANOMÉTRICA PRINCIPAL (MCA)', row.get('EEAB - ALTURA MANOMETRICA PRINCIPAL (MCA)'))
+                    vaz = formatar_valor(row.get('EEAB - VAZÃO PRINCIPAL (M³/H)', row.get('EEAB - VAZAO PRINCIPAL (M³/H)')))
+                    alt = formatar_valor(row.get('EEAB - ALTURA MANOMÉTRICA PRINCIPAL (MCA)', row.get('EEAB - ALTURA MANOMETRICA PRINCIPAL (MCA)')))
                     if dado_valido(vaz) or dado_valido(alt):
                         txt_v = "**Vazão e Altura:**"
                         if dado_valido(vaz): txt_v += f" {vaz} m³/h"
@@ -342,7 +352,8 @@ try:
             if not dados_adu.empty:
                 st.header("🔗 Sistemas Interligados / Adutoras de Exportação")
                 for _, row in dados_adu.iterrows():
-                    st.warning(f"🚨 **Atenção:** Sistema Interligado! Origem: {row[c_origem]} ➔ Destino: {row[c_destino]} | Diâmetro: {row.get('DIÂMETRO DA ADUTORA (MM)', row.get('DIAMETRO DA ADUTORA (MM)', '—'))}mm")
+                    diam_adu = formatar_valor(row.get('DIÂMETRO DA ADUTORA (MM)', row.get('DIAMETRO DA ADUTORA (MM)', '—')))
+                    st.warning(f"🚨 **Atenção:** Sistema Interligado! Origem: {row[c_origem]} ➔ Destino: {row[c_destino]} | Diâmetro: {diam_adu}mm")
 
     # 3. Seção de Poços Artesianos
     if not dados_poc.empty:
@@ -358,12 +369,16 @@ try:
                 
                 if dado_valido(row.get('LOCALIDADE/REGIÃO', row.get('LOCALIDADE/REGIAO'))): st.write(f"**Região/Localidade:** {row.get('LOCALIDADE/REGIÃO', row.get('LOCALIDADE/REGIAO'))}")
                 
-                cc_equatorial = row.get('CC EQUATORIAL')
+                cc_equatorial = formatar_valor(row.get('CC EQUATORIAL'))
                 if dado_valido(cc_equatorial): st.write(f"**⚡ CC Equatorial:** {cc_equatorial}")
                 
-                if dado_valido(row.get('POTÊNCIA DA BOMBA (CV)', row.get('POTENCIA DA BOMBA (CV)'))): st.write(f"**Potência da Bomba:** {row.get('POTÊNCIA DA BOMBA (CV)', row.get('POTENCIA DA BOMBA (CV)'))} cv")
-                if dado_valido(row.get('ALTURA DA BOMBA (MCA)', row.get('ALTURA DA BOMBA (MCA)'))): st.write(f"**Altura da Bomba:** {row.get('ALTURA DA BOMBA (MCA)', row.get('ALTURA DA BOMBA (MCA)'))} mca")
-                if dado_valido(row.get('VAZÃO (M³/H)', row.get('VAZAO (M³/H)'))): st.write(f"**Vazão Cadastrada:** {row.get('VAZÃO (M³/H)', row.get('VAZAO (M³/H)'))} m³/h")
+                pot_b = formatar_valor(row.get('POTÊNCIA DA BOMBA (CV)', row.get('POTENCIA DA BOMBA (CV)')))
+                alt_b = formatar_valor(row.get('ALTURA DA BOMBA (MCA)', row.get('ALTURA DA BOMBA (MCA)')))
+                vaz_b = formatar_valor(row.get('VAZÃO (M³/H)', row.get('VAZAO (M³/H)')))
+                
+                if dado_valido(pot_b): st.write(f"**Potência da Bomba:** {pot_b} cv")
+                if dado_valido(alt_b): st.write(f"**Altura da Bomba:** {alt_b} mca")
+                if dado_valido(vaz_b): st.write(f"**Vazão Cadastrada:** {vaz_b} m³/h")
                 
                 link_curva = row.get('LINK/ARQUIVO CURVA DA BOMBA', '')
                 if dado_valido(link_curva):
