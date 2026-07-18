@@ -152,36 +152,39 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
     
     if not df_c.empty:
         pdf.set_font("Helvetica", "B", 11)
-        pdf.cell(0, 7, "1. DADOS DA CAPTACAO SUPERFICIAL", ln=True)
+        pdf.cell(0, 7, "1. DADOS DA CAPTACAO SUPERFICIAL E ADUTORAS/EEAB", ln=True)
         pdf.set_font("Helvetica", "", 10)
         for _, row in df_c.iterrows():
             loc = row.get('LOCALIDADE', '')
             tipo = row.get('CAPTAÇÃO - TIPO', row.get('CAPTACAO - TIPO', ''))
             vaz_cap = formatar_valor(row.get('VAZÃO', row.get('VAZAO', '')))
             diam = formatar_valor(row.get('ADUTORA AB ATÉ EEAB - DIÂMETRO (MM)', row.get('ADUTORA AB ATE EEAB - DIAMETRO (MM)', '')))
+            
+            # Buscando as colunas recortadas que agora residem no loop da captação (df_c)
+            bomba = row.get('EEAB - TIPO DA BOMBA PRINCIPAL', '')
+            pot = formatar_valor(row.get('EEAB - POTÊNCIA PRINCIPAL (CV)', row.get('EEAB - POTENCIA PRINCIPAL (CV)', '')))
+            
             obs_cap = row.get('OBSERVAÇÕES', row.get('OBSERVACOES', ''))
             
             if dado_valido(loc): pdf.cell(0, 5.5, f"Localidade/Sistema: {limpar_acentos(loc)}", ln=True)
             if dado_valido(tipo): pdf.cell(0, 5.5, f"Tipo de Captacao: {limpar_acentos(tipo)}", ln=True)
             if dado_valido(vaz_cap): pdf.cell(0, 5.5, f"Vazao da Captacao: {vaz_cap} m3/h", ln=True)
             if dado_valido(diam): pdf.cell(0, 5.5, f"Adutora AB ate EEAB: Diametro {diam}mm", ln=True)
+            if dado_valido(bomba) or dado_valido(pot): 
+                pdf.cell(0, 5.5, f"Bomba Elevatoria (EEAB): {limpar_acentos(bomba)} | Potencia: {pot} cv", ln=True)
             if dado_valido(obs_cap): pdf.cell(0, 5.5, f"Obs: {limpar_acentos(obs_cap)}", ln=True)
             pdf.ln(1.5)
         pdf.ln(3)
 
     if not df_e.empty:
         pdf.set_font("Helvetica", "B", 11)
-        pdf.cell(0, 7, "2. ESTACAO DE TRATAMENTO DE AGUA (ETA / EEAB)", ln=True)
+        pdf.cell(0, 7, "2. ESTACAO DE TRATAMENTO DE AGUA (ETA)", ln=True)
         pdf.set_font("Helvetica", "", 10)
         for _, row in df_e.iterrows():
             loc_eta = row.get('LOCALIDADE', '')
-            bomba = row.get('EEAB - TIPO DA BOMBA PRINCIPAL', '')
-            pot = formatar_valor(row.get('EEAB - POTÊNCIA PRINCIPAL (CV)', row.get('EEAB - POTENCIA PRINCIPAL (CV)', '')))
             obs_eta = row.get('OBSERVAÇÕES', row.get('OBSERVACOES', ''))
             
             if dado_valido(loc_eta): pdf.cell(0, 5.5, f"Localidade da ETA: {limpar_acentos(loc_eta)}", ln=True)
-            if dado_valido(bomba) or dado_valido(pot): 
-                pdf.cell(0, 5.5, f"Bomba Principal: {limpar_acentos(bomba)} | Potencia: {pot} cv", ln=True)
             if dado_valido(obs_eta): pdf.cell(0, 5.5, f"Obs: {limpar_acentos(obs_eta)}", ln=True)
             pdf.ln(1.5)
         pdf.ln(3)
@@ -291,7 +294,7 @@ try:
         
         with col_cap:
             if not dados_cap.empty:
-                st.markdown("<div class='card'><div class='card-title'>🪵 DADOS DA CAPTAÇÃO</div>", unsafe_allow_html=True)
+                st.markdown("<div class='card'><div class='card-title'>🪵 DADOS DA CAPTAÇÃO E ADUTORAS/EEAB</div>", unsafe_allow_html=True)
                 for _, row in dados_cap.iterrows():
                     if dado_valido(row.get('LOCALIDADE')): st.write(f"**Localidade/Sistema:** {row.get('LOCALIDADE')}")
                     if dado_valido(row.get('CAPTAÇÃO - TIPO', row.get('CAPTACAO - TIPO'))): st.write(f"**Tipo de Captação:** {row.get('CAPTAÇÃO - TIPO', row.get('CAPTACAO - TIPO'))}")
@@ -314,11 +317,28 @@ try:
                         if dado_valido(comp): txt_adu += f" | Comprimento: {comp} m"
                         st.write(txt_adu)
                     
+                    # --- NOVO BLOCO: LENDO AS COLUNAS RECORTADAS DIRETAMENTE DA CAPTAÇÃO ---
+                    bomba = row.get('EEAB - TIPO DA BOMBA PRINCIPAL')
+                    pot = formatar_valor(row.get('EEAB - POTÊNCIA PRINCIPAL (CV)', row.get('EEAB - POTENCIA PRINCIPAL (CV)')))
+                    if dado_valido(bomba) or dado_valido(pot):
+                        txt_b = "**Bomba Elevatória (EEAB):**"
+                        if dado_valido(bomba): txt_b += f" {bomba}"
+                        if dado_valido(pot): txt_b += f" | Potência: {pot} cv"
+                        st.write(txt_b)
+                        
+                    vaz = formatar_valor(row.get('EEAB - VAZÃO PRINCIPAL (M³/H)', row.get('EEAB - VAZAO PRINCIPAL (M³/H)')))
+                    alt = formatar_valor(row.get('EEAB - ALTURA MANOMÉTRICA PRINCIPAL (MCA)', row.get('EEAB - ALTURA MANOMETRICA PRINCIPAL (MCA)')))
+                    if dado_valido(vaz) or dado_valido(alt):
+                        txt_v = "**Vazão e Altura da EEAB:**"
+                        if dado_valido(vaz): txt_v += f" {vaz} m³/h"
+                        if dado_valido(alt): txt_v += f" | {alt} mca"
+                        st.write(txt_v)
+                    # ---------------------------------------------------------------------
+                    
                     foto_cap = row.get('LINK DA FOTO')
                     if dado_valido(foto_cap):
                         st.image(str(foto_cap), caption="Foto da Captação", use_container_width=True)
                         
-                    # ATUALIZADO: Exibição de Observações da Captação
                     obs_c = row.get('OBSERVAÇÕES', row.get('OBSERVACOES'))
                     if dado_valido(obs_c):
                         st.info(f"**Obs:** {obs_c}")
@@ -328,34 +348,17 @@ try:
 
         with col_eta:
             if not dados_eta.empty:
-                st.markdown("<div class='card'><div class='card-title'>⚡ ESTAÇÃO DE TRATAMENTO DE ÁGUA (ETA / EEAB)</div>", unsafe_allow_html=True)
+                st.markdown("<div class='card'><div class='card-title'>⚡ ESTAÇÃO DE TRATAMENTO DE ÁGUA (ETA)</div>", unsafe_allow_html=True)
                 for _, row in dados_eta.iterrows():
                     if dado_valido(row.get('LOCALIDADE')): st.write(f"**Localidade da ETA:** {row.get('LOCALIDADE')}")
                     
                     cc_eq_eta = formatar_valor(row.get('CC EQUATORIAL ETA'))
                     if dado_valido(cc_eq_eta): st.write(f"**CC Equatorial ETA:** {cc_eq_eta}")
-                    
-                    bomba = row.get('EEAB - TIPO DA BOMBA PRINCIPAL')
-                    pot = formatar_valor(row.get('EEAB - POTÊNCIA PRINCIPAL (CV)', row.get('EEAB - POTENCIA PRINCIPAL (CV)')))
-                    if dado_valido(bomba) or dado_valido(pot):
-                        txt_b = "**Bomba Principal:**"
-                        if dado_valido(bomba): txt_b += f" {bomba}"
-                        if dado_valido(pot): txt_b += f" | Potência: {pot} cv"
-                        st.write(txt_b)
-                        
-                    vaz = formatar_valor(row.get('EEAB - VAZÃO PRINCIPAL (M³/H)', row.get('EEAB - VAZAO PRINCIPAL (M³/H)')))
-                    alt = formatar_valor(row.get('EEAB - ALTURA MANOMÉTRICA PRINCIPAL (MCA)', row.get('EEAB - ALTURA MANOMETRICA PRINCIPAL (MCA)')))
-                    if dado_valido(vaz) or dado_valido(alt):
-                        txt_v = "**Vazão e Altura:**"
-                        if dado_valido(vaz): txt_v += f" {vaz} m³/h"
-                        if dado_valido(alt): txt_v += f" | {alt} mca"
-                        st.write(txt_v)
                         
                     foto_eta = row.get('LINK DA FOTO')
                     if dado_valido(foto_eta):
-                        st.image(str(foto_eta), caption="Foto da ETA / EEAB", use_container_width=True)
+                        st.image(str(foto_eta), caption="Foto da ETA", use_container_width=True)
                         
-                    # ATUALIZADO: Exibição de Observações da ETA
                     obs_e = row.get('OBSERVAÇÕES', row.get('OBSERVACOES'))
                     if dado_valido(obs_e):
                         st.info(f"**Obs:** {obs_e}")
