@@ -13,10 +13,8 @@ st.set_page_config(
 # Estilização CSS para corrigir margens, cores institucionais e criar os Cards visuais
 st.markdown("""
     <style>
-    /* Ajustado para 4rem para dar o espaço necessário no topo e não cortar a logo */
     .block-container { padding-top: 4rem; }
     
-    /* Contêiner para centralizar verticalmente o texto em relação à logo */
     .header-text-container {
         display: flex;
         flex-direction: column;
@@ -25,7 +23,6 @@ st.markdown("""
         padding-left: 10px;
     }
     
-    /* Cores e fontes para o cabeçalho ao lado da logo */
     .titulo-principal {
         color: #1F4E79;
         font-size: 2.3rem;
@@ -35,14 +32,13 @@ st.markdown("""
         line-height: 1.2;
     }
     .subtitulo-principal {
-        color: #006699; /* Cor azul institucional da CASAL */
+        color: #006699; 
         font-size: 1.3rem;
         font-weight: bold;
         margin-top: 8px;
         padding: 0;
     }
     
-    /* Configuração visual dos Cards */
     .card {
         background-color: #f8f9fa;
         padding: 20px;
@@ -55,10 +51,8 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Link oficial da sua Planilha do Google configurado
 URL_PLANILHA = "https://docs.google.com/spreadsheets/d/1cUfZoPkVmiOivWXmRK4u3Vlp435f4_DeFzGvTFQOiNw/edit?gid=1107305555#gid=1107305555"
 
-# Detecta a logo na pasta (suporta png, jpg ou jpeg)
 LOGO_PATH = None
 for ext in ['png', 'jpg', 'jpeg']:
     if os.path.exists(f"logo.{ext}"):
@@ -75,13 +69,11 @@ def converter_link_sheets(url):
 
 base_url = converter_link_sheets(URL_PLANILHA)
 
-# Função auxiliar para validar se um dado existe e é válido
 def dado_valido(valor):
     if pd.isna(valor) or str(valor).strip() == "" or str(valor).strip().lower() == "nan" or str(valor).strip() == "—":
         return False
     return True
 
-# Função para limpar o sufixo .0 de números inteiros mantendo decimais como 0.255
 def formatar_valor(valor):
     if not dado_valido(valor):
         return ""
@@ -90,16 +82,15 @@ def formatar_valor(valor):
         return texto[:-2]
     return texto
 
-# Função para remover ou substituir acentos apenas para exibição no PDF padrão do FPDF
 def limpar_acentos(texto):
     if not texto: return ""
     import unicodedata
     return "".join(c for c in unicodedata.normalize('NFD', str(texto)) if unicodedata.category(c) != 'Mn')
 
-# Carrega as abas oficiais do projeto tratando colunas para maiúsculo
 @st.cache_data(ttl=60)
 def carregar_dados():
     try:
+        # Corrigido explicitamente para DADOS_CAPTACAO
         df_cap = pd.read_csv(base_url + "DADOS_CAPTACAO")
         df_cap.columns = [c.strip().upper() for c in df_cap.columns]
     except:
@@ -160,10 +151,8 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
             vaz_cap = formatar_valor(row.get('VAZÃO', row.get('VAZAO', '')))
             diam = formatar_valor(row.get('ADUTORA AB ATÉ EEAB - DIÂMETRO (MM)', row.get('ADUTORA AB ATE EEAB - DIAMETRO (MM)', '')))
             
-            # Buscando as colunas recortadas que agora residem no loop da captação (df_c)
             bomba = row.get('EEAB - TIPO DA BOMBA PRINCIPAL', '')
             pot = formatar_valor(row.get('EEAB - POTÊNCIA PRINCIPAL (CV)', row.get('EEAB - POTENCIA PRINCIPAL (CV)', '')))
-            
             obs_cap = row.get('OBSERVAÇÕES', row.get('OBSERVACOES', ''))
             
             if dado_valido(loc): pdf.cell(0, 5.5, f"Localidade/Sistema: {limpar_acentos(loc)}", ln=True)
@@ -182,9 +171,11 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
         pdf.set_font("Helvetica", "", 10)
         for _, row in df_e.iterrows():
             loc_eta = row.get('LOCALIDADE', '')
+            vaz_chg = formatar_valor(row.get('VAZÃO DE CHEGADA NA ETA', row.get('VAZAO DE CHEGADA NA ETA', '')))
             obs_eta = row.get('OBSERVAÇÕES', row.get('OBSERVACOES', ''))
             
             if dado_valido(loc_eta): pdf.cell(0, 5.5, f"Localidade da ETA: {limpar_acentos(loc_eta)}", ln=True)
+            if dado_valido(vaz_chg): pdf.cell(0, 5.5, f"Vazao de Chegada na ETA: {vaz_chg} m3/h", ln=True)
             if dado_valido(obs_eta): pdf.cell(0, 5.5, f"Obs: {limpar_acentos(obs_eta)}", ln=True)
             pdf.ln(1.5)
         pdf.ln(3)
@@ -219,7 +210,6 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
 try:
     df_captacao, df_eta_eeab, df_pocos, df_adutoras = carregar_dados()
     
-    # Padronização de nomes das colunas de Município
     for df in [df_captacao, df_eta_eeab, df_pocos]:
         if 'MUNICIPIO' in df.columns and 'MUNICÍPIO' not in df.columns:
             df.rename(columns={'MUNICIPIO': 'MUNICÍPIO'}, inplace=True)
@@ -252,7 +242,6 @@ try:
 
     st.markdown("---")
 
-    # --- BARRA DE FILTRO E BOTÃO DE IMPRESSÃO ---
     col_sel, col_btn = st.columns([3, 1])
     
     with col_sel:
@@ -287,7 +276,6 @@ try:
 
     # --- INTERFACE ADAPTATIVA DO PAINEL ---
     
-    # 1. Seção Superficial (Captação e ETA)
     if not dados_cap.empty or not dados_eta.empty:
         st.header("🏢 Infraestrutura de Tratamento e Distribuição Superficial")
         col_cap, col_eta = st.columns(2)
@@ -317,7 +305,6 @@ try:
                         if dado_valido(comp): txt_adu += f" | Comprimento: {comp} m"
                         st.write(txt_adu)
                     
-                    # --- NOVO BLOCO: LENDO AS COLUNAS RECORTADAS DIRETAMENTE DA CAPTAÇÃO ---
                     bomba = row.get('EEAB - TIPO DA BOMBA PRINCIPAL')
                     pot = formatar_valor(row.get('EEAB - POTÊNCIA PRINCIPAL (CV)', row.get('EEAB - POTENCIA PRINCIPAL (CV)')))
                     if dado_valido(bomba) or dado_valido(pot):
@@ -333,7 +320,6 @@ try:
                         if dado_valido(vaz): txt_v += f" {vaz} m³/h"
                         if dado_valido(alt): txt_v += f" | {alt} mca"
                         st.write(txt_v)
-                    # ---------------------------------------------------------------------
                     
                     foto_cap = row.get('LINK DA FOTO')
                     if dado_valido(foto_cap):
@@ -351,6 +337,10 @@ try:
                 st.markdown("<div class='card'><div class='card-title'>⚡ ESTAÇÃO DE TRATAMENTO DE ÁGUA (ETA)</div>", unsafe_allow_html=True)
                 for _, row in dados_eta.iterrows():
                     if dado_valido(row.get('LOCALIDADE')): st.write(f"**Localidade da ETA:** {row.get('LOCALIDADE')}")
+                    
+                    # --- EXIBINDO A NOVA COLUNA DA VAZÃO DE CHEGADA ---
+                    vaz_chegada = formatar_valor(row.get('VAZÃO DE CHEGADA NA ETA', row.get('VAZAO DE CHEGADA NA ETA')))
+                    if dado_valido(vaz_chegada): st.write(f"**🌊 Vazão de Chegada na ETA:** {vaz_chegada} m³/h")
                     
                     cc_eq_eta = formatar_valor(row.get('CC EQUATORIAL ETA'))
                     if dado_valido(cc_eq_eta): st.write(f"**CC Equatorial ETA:** {cc_eq_eta}")
