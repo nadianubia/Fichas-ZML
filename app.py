@@ -90,7 +90,6 @@ def limpar_acentos(texto):
 @st.cache_data(ttl=60)
 def carregar_dados():
     try:
-        # Corrigido explicitamente para DADOS_CAPTACAO
         df_cap = pd.read_csv(base_url + "DADOS_CAPTACAO")
         df_cap.columns = [c.strip().upper() for c in df_cap.columns]
     except:
@@ -159,6 +158,13 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
             if dado_valido(tipo): pdf.cell(0, 5.5, f"Tipo de Captacao: {limpar_acentos(tipo)}", ln=True)
             if dado_valido(vaz_cap): pdf.cell(0, 5.5, f"Vazao da Captacao: {vaz_cap} m3/h", ln=True)
             if dado_valido(diam): pdf.cell(0, 5.5, f"Adutora AB ate EEAB: Diametro {diam}mm", ln=True)
+            
+            # Adiciona CC Equatorial EEAB no PDF se houver correspondência ou da aba ETA
+            if not df_e.empty:
+                cc_eeab_aux = formatar_valor(df_e.iloc[0].get('CC EQUATORIAL EEAB'))
+                if dado_valido(cc_eeab_aux):
+                    pdf.cell(0, 5.5, f"CC Equatorial EEAB: {cc_eeab_aux}", ln=True)
+
             if dado_valido(bomba) or dado_valido(pot): 
                 pdf.cell(0, 5.5, f"Bomba Elevatoria (EEAB): {limpar_acentos(bomba)} | Potencia: {pot} cv", ln=True)
             if dado_valido(obs_cap): pdf.cell(0, 5.5, f"Obs: {limpar_acentos(obs_cap)}", ln=True)
@@ -172,9 +178,11 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
         for _, row in df_e.iterrows():
             loc_eta = row.get('LOCALIDADE', '')
             vaz_chg = formatar_valor(row.get('VAZÃO DE CHEGADA NA ETA', row.get('VAZAO DE CHEGADA NA ETA', '')))
+            cc_eta_aux = formatar_valor(row.get('CC EQUATORIAL ETA'))
             obs_eta = row.get('OBSERVAÇÕES', row.get('OBSERVACOES', ''))
             
             if dado_valido(loc_eta): pdf.cell(0, 5.5, f"Localidade da ETA: {limpar_acentos(loc_eta)}", ln=True)
+            if dado_valido(cc_eta_aux): pdf.cell(0, 5.5, f"CC Equatorial ETA: {cc_eta_aux}", ln=True)
             if dado_valido(vaz_chg): pdf.cell(0, 5.5, f"Vazao de Chegada na ETA: {vaz_chg} m3/h", ln=True)
             if dado_valido(obs_eta): pdf.cell(0, 5.5, f"Obs: {limpar_acentos(obs_eta)}", ln=True)
             pdf.ln(1.5)
@@ -320,6 +328,11 @@ try:
                         if dado_valido(vaz): txt_v += f" {vaz} m³/h"
                         if dado_valido(alt): txt_v += f" | {alt} mca"
                         st.write(txt_v)
+
+                    # --- EXIBIÇÃO DA CC EQUATORIAL DA EEAB (BUSCANDO DA TABELA ETA) ---
+                    if not dados_eta.empty:
+                        cc_eeab = formatar_valor(dados_eta.iloc[0].get('CC EQUATORIAL EEAB'))
+                        if dado_valido(cc_eeab): st.write(f"**⚡ CC Equatorial EEAB:** {cc_eeab}")
                     
                     foto_cap = row.get('LINK DA FOTO')
                     if dado_valido(foto_cap):
@@ -338,12 +351,11 @@ try:
                 for _, row in dados_eta.iterrows():
                     if dado_valido(row.get('LOCALIDADE')): st.write(f"**Localidade da ETA:** {row.get('LOCALIDADE')}")
                     
-                    # --- EXIBINDO A NOVA COLUNA DA VAZÃO DE CHEGADA ---
                     vaz_chegada = formatar_valor(row.get('VAZÃO DE CHEGADA NA ETA', row.get('VAZAO DE CHEGADA NA ETA')))
                     if dado_valido(vaz_chegada): st.write(f"**🌊 Vazão de Chegada na ETA:** {vaz_chegada} m³/h")
                     
                     cc_eq_eta = formatar_valor(row.get('CC EQUATORIAL ETA'))
-                    if dado_valido(cc_eq_eta): st.write(f"**CC Equatorial ETA:** {cc_eq_eta}")
+                    if dado_valido(cc_eq_eta): st.write(f"**⚡ CC Equatorial ETA:** {cc_eq_eta}")
                         
                     foto_eta = row.get('LINK DA FOTO')
                     if dado_valido(foto_eta):
