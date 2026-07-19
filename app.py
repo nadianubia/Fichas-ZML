@@ -115,7 +115,7 @@ def carregar_dados():
         
     return df_cap, df_eta, df_poc, df_adu
 
-# --- FUNÇÃO PARA GERAR O PDF DINÂMICO ---
+# --- FUNÇÃO PARA GERAR O PDF DINÂMICO (CORRIGIDA) ---
 def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
     pdf = FPDF()
     pdf.add_page()
@@ -159,7 +159,6 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
             if dado_valido(vaz_cap): pdf.cell(0, 5.5, f"Vazao da Captacao: {vaz_cap} m3/h", ln=True)
             if dado_valido(diam): pdf.cell(0, 5.5, f"Adutora AB ate EEAB: Diametro {diam}mm", ln=True)
             
-            # Adiciona CC Equatorial EEAB no PDF se houver correspondência ou da aba ETA
             if not df_e.empty:
                 cc_eeab_aux = formatar_valor(df_e.iloc[0].get('CC EQUATORIAL EEAB'))
                 if dado_valido(cc_eeab_aux):
@@ -167,7 +166,10 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
 
             if dado_valido(bomba) or dado_valido(pot): 
                 pdf.cell(0, 5.5, f"Bomba Elevatoria (EEAB): {limpar_acentos(bomba)} | Potencia: {pot} cv", ln=True)
-            if dado_valido(obs_cap): pdf.cell(0, 5.5, f"Obs: {limpar_acentos(obs_cap)}", ln=True)
+            
+            # Quebra automática para observações longas
+            if dado_valido(obs_cap): 
+                pdf.multi_cell(0, 5.5, f"Obs: {limpar_acentos(obs_cap)}")
             pdf.ln(1.5)
         pdf.ln(3)
 
@@ -184,7 +186,10 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
             if dado_valido(loc_eta): pdf.cell(0, 5.5, f"Localidade da ETA: {limpar_acentos(loc_eta)}", ln=True)
             if dado_valido(cc_eta_aux): pdf.cell(0, 5.5, f"CC Equatorial ETA: {cc_eta_aux}", ln=True)
             if dado_valido(vaz_chg): pdf.cell(0, 5.5, f"Vazao de Chegada na ETA: {vaz_chg} m3/h", ln=True)
-            if dado_valido(obs_eta): pdf.cell(0, 5.5, f"Obs: {limpar_acentos(obs_eta)}", ln=True)
+            
+            # Quebra automática para observações longas
+            if dado_valido(obs_eta): 
+                pdf.multi_cell(0, 5.5, f"Obs: {limpar_acentos(obs_eta)}")
             pdf.ln(1.5)
         pdf.ln(3)
 
@@ -209,8 +214,11 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
             
             if detalhes:
                 pdf.cell(0, 5, "  " + " | ".join(detalhes), ln=True)
+                
+            # Quebra automática para observações longas
             if dado_valido(obs_poc):
-                pdf.cell(0, 5, f"  Obs: {limpar_acentos(obs_poc)}", ln=True)
+                pdf.set_x(10)
+                pdf.multi_cell(0, 5, f"  Obs: {limpar_acentos(obs_poc)}")
             pdf.ln(1)
             
     return pdf.output()
