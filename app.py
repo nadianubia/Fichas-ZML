@@ -94,11 +94,9 @@ def formatar_link_drive(url):
     if not dado_valido(url):
         return None
     url_str = str(url).strip()
-    # Captura o ID do arquivo em links de compartilhamento
     match = re.search(r'(?:file/d/|id=)([\w-]+)', url_str)
     if match:
         file_id = match.group(1)
-        # Link de renderização direta do Google Drive
         return f"https://lh3.googleusercontent.com/d/{file_id}"
     return url_str
 
@@ -247,7 +245,7 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
         pdf.set_font("Helvetica", "", 10)
         for _, row in df_e.iterrows():
             loc_eta = buscar_campo_mult(row, ['Localidade'])
-            cc_eta = formatar_valor(buscar_campo_mult(row, ['CC Equatorial ETA']))
+            cc_eta = formatar_valor(buscar_campo_mult(row, ['CC Equatorial ETA', 'CC ETA']))
             eta_tipo = buscar_campo_mult(row, ['ETA - Tipo'])
             filtros_qtd = formatar_valor(buscar_campo_mult(row, ['Filtros - Quantidade']))
             prod_chem = buscar_campo_mult(row, ['Produto Químico Principal'])
@@ -267,8 +265,11 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
         pdf.cell(0, 7, "3. SISTEMA DE POCOS ARTESIANOS (SUBTERRANEO)", ln=True)
         for _, row in df_p.iterrows():
             id_p = buscar_campo_mult(row, ['Identificação do Poço']) or 'Poco'
+            cc_p = formatar_valor(buscar_campo_mult(row, ['CC Equatorial', 'CC Equatorial Poço', 'CC Poço', 'CC', 'Código do Cliente']))
             pdf.set_font("Helvetica", "B", 10)
-            pdf.cell(0, 5.5, f"Poco: {limpar_acentos(id_p)}", ln=True)
+            txt_head_p = f"Poco: {limpar_acentos(id_p)}"
+            if dado_valido(cc_p): txt_head_p += f" (CC: {cc_p})"
+            pdf.cell(0, 5.5, txt_head_p, ln=True)
             pdf.set_font("Helvetica", "", 10)
             
             pot_b = formatar_valor(buscar_campo_mult(row, ['Potência da Bomba (cv)']))
@@ -533,6 +534,10 @@ try:
                 
                 loc_p = buscar_campo_mult(row, ['Localidade/Região', 'Localidade'])
                 if dado_valido(loc_p): st.write(f"**Região/Localidade:** {loc_p}")
+
+                # --- EXIBIÇÃO DA CC EQUATORIAL DO POÇO ---
+                cc_poco = formatar_valor(buscar_campo_mult(row, ['CC Equatorial', 'CC Equatorial Poço', 'CC Poço', 'CC', 'Código do Cliente', 'CC Equatorial (Poço)']))
+                if dado_valido(cc_poco): st.write(f"**⚡ CC Equatorial:** {cc_poco}")
                 
                 pot_b = formatar_valor(buscar_campo_mult(row, ['Potência da Bomba (cv)', 'Potência (cv)']))
                 alt_b = formatar_valor(buscar_campo_mult(row, ['Altura da Bomba (mca)', 'Altura (mca)']))
@@ -565,7 +570,7 @@ try:
             if lat_f is not None and lon_f is not None:
                 nome_est = buscar_campo_mult(r_g, ['Unidade', 'UNIDADE', 'Descrição', 'Descricao', 'Estrutura', 'Nome']) or 'Unidade Operacional'
                 
-                # Criando link direto para Google Maps
+                # Link direto para Google Maps
                 link_gmaps = f"https://www.google.com/maps/search/?api=1&query={lat_f},{lon_f}"
                 
                 pontos_mapa.append({
@@ -585,7 +590,6 @@ try:
             col_mapa, col_lista = st.columns([1.2, 1])
             
             with col_mapa:
-                # Exibe o mapa
                 st.map(
                     df_mapa, 
                     latitude='Latitude', 
@@ -597,7 +601,6 @@ try:
             with col_lista:
                 st.markdown("##### 📌 Unidades Mapeadas")
                 
-                # Exibição em tabela moderna com links interativos e altura fixa com rolagem
                 st.dataframe(
                     df_mapa[['Unidade / Estrutura', 'Google Maps']],
                     column_config={
@@ -610,7 +613,7 @@ try:
                     },
                     hide_index=True,
                     use_container_width=True,
-                    height=380 # Fixa a altura para alinhar perfeitamente ao mapa
+                    height=380
                 )
 
 except Exception as e:
