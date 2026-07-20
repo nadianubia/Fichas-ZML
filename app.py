@@ -106,7 +106,6 @@ def extrair_lista_fotos(row, tipo_aba):
     """Busca dinâmica por colunas de foto (01, 02, 03) independente da aba"""
     fotos = []
     
-    # Define variações possíveis baseadas no tipo de aba
     opcoes = []
     if tipo_aba == "cap":
         opcoes = ["Foto Captação", "Foto Captacao", "Foto"]
@@ -129,7 +128,7 @@ def extrair_lista_fotos(row, tipo_aba):
     return fotos
 
 def exibir_galeria_fotos(fotos, legenda_base="Foto"):
-    """Exibe até 3 fotos em colunas lado a lado no card"""
+    """Exibe fotos em colunas lado a lado no card"""
     if not fotos:
         return
     st.markdown("<div style='margin-top: 15px;'><b>📷 Registros Fotográficos:</b></div>", unsafe_allow_html=True)
@@ -553,7 +552,7 @@ try:
     if dados_cap.empty and dados_eta.empty and dados_poc.empty:
         st.info("Nenhuma estrutura localizada para este município nos registros da planilha.")
 
-    # --- SEÇÃO DE GEOLOCALIZAÇÃO NO FINAL DA PÁGINA (LADO A LADO) ---
+    # --- SEÇÃO DE GEOLOCALIZAÇÃO OTIMIZADA ---
     if not dados_geo.empty:
         pontos_mapa = []
         for _, r_g in dados_geo.iterrows():
@@ -565,25 +564,54 @@ try:
             
             if lat_f is not None and lon_f is not None:
                 nome_est = buscar_campo_mult(r_g, ['Unidade', 'UNIDADE', 'Descrição', 'Descricao', 'Estrutura', 'Nome']) or 'Unidade Operacional'
-                pontos_mapa.append({'latitude': lat_f, 'longitude': lon_f, 'Unidade': str(nome_est)})
+                
+                # Criando link direto para Google Maps
+                link_gmaps = f"https://www.google.com/maps/search/?api=1&query={lat_f},{lon_f}"
+                
+                pontos_mapa.append({
+                    'Unidade / Estrutura': str(nome_est),
+                    'Latitude': lat_f,
+                    'Longitude': lon_f,
+                    'Google Maps': link_gmaps
+                })
 
         if pontos_mapa:
             st.markdown("---")
             st.header("📍 Geolocalização das Unidades Operacionais")
             
-            col_mapa, col_lista = st.columns([1, 1])
             df_mapa = pd.DataFrame(pontos_mapa)
+
+            # Dividindo a tela de forma proporcional
+            col_mapa, col_lista = st.columns([1.2, 1])
             
             with col_mapa:
-                st.map(df_mapa, latitude='latitude', longitude='longitude', zoom=12, use_container_width=True)
+                # Exibe o mapa
+                st.map(
+                    df_mapa, 
+                    latitude='Latitude', 
+                    longitude='Longitude', 
+                    zoom=11, 
+                    use_container_width=True
+                )
                 
             with col_lista:
-                st.markdown("<div class='card'><div class='card-title'>📌 Coordenadas e Acesso GPS</div>", unsafe_allow_html=True)
-                for p in pontos_mapa:
-                    st.write(f"• **{p['Unidade']}**")
-                    st.caption(f"Lat: `{p['latitude']}` | Lon: `{p['longitude']}` — [🌐 Google Maps](https://www.google.com/maps/search/?api=1&query={p['latitude']},{p['longitude']})")
-                    st.markdown("<div style='margin-bottom: 8px;'></div>", unsafe_allow_html=True)
-                st.markdown("</div>", unsafe_allow_html=True)
+                st.markdown("##### 📌 Unidades Mapeadas")
+                
+                # Exibição em tabela moderna com links interativos e altura fixa com rolagem
+                st.dataframe(
+                    df_mapa[['Unidade / Estrutura', 'Google Maps']],
+                    column_config={
+                        "Unidade / Estrutura": st.column_config.TextColumn("Unidade Operacional", help="Nome da unidade"),
+                        "Google Maps": st.column_config.LinkColumn(
+                            "Rota GPS", 
+                            display_text="🗺️ Abrir no Maps",
+                            help="Clique para abrir as coordenadas no Google Maps"
+                        )
+                    },
+                    hide_index=True,
+                    use_container_width=True,
+                    height=380 # Fixa a altura para alinhar perfeitamente ao mapa
+                )
 
 except Exception as e:
     st.error(f"Erro na leitura dos dados: {e}")
