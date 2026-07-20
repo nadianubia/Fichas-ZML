@@ -193,7 +193,7 @@ def carregar_dados():
         
     return df_cap, df_eta, df_poc, df_adu, df_geo
 
-# --- GERADOR DE PDF COM FOTOS ---
+# --- GERADOR DE PDF COM FOTOS E OBSERVAÇÕES CORRIGIDAS ---
 def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
     pdf = FPDF()
     pdf.add_page()
@@ -217,7 +217,7 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(5)
     
-    # --- CAPTAÇÃO E EEAB ---
+    # --- 1. CAPTAÇÃO E EEAB ---
     if not df_c.empty or not df_e.empty:
         pdf.set_font("Helvetica", "B", 11)
         pdf.cell(0, 7, "1. DADOS DA CAPTACAO SUPERFICIAL E ADUTORAS/EEAB", ln=True)
@@ -242,6 +242,16 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
             vaz_res = formatar_valor(buscar_campo_mult(row, ['EEAB - Vazão Reserva (m³/h)', 'EEAB - Vazao Reserva (m3/h)', 'EAB - Vazão Reserva (m³/h)', 'Vazão Reserva']))
             alt_res = formatar_valor(buscar_campo_mult(row, ['EEAB - Altura Manométrica Reserva (mca)', 'EEAB - Altura Manometrica Reserva (mca)', 'EAB - Altura Manométrica Reserva (mca)']))
             
+            crivo = buscar_campo_mult(row, ['Captação - Possui Crivo', 'Possui Crivo'])
+            mat_crivo = buscar_campo_mult(row, ['Captação - Material Crivo', 'Material Crivo'])
+            diam_crivo = formatar_valor(buscar_campo_mult(row, ['Captação - Diâmetro Crivo (mm)', 'Captação - Diametro Crivo (mm)']))
+
+            diam_adu = formatar_valor(buscar_campo_mult(row, ['Adutora EEAB até ETA - Diâmetro (mm)', 'Adutora EEAB ate ETA - Diametro (mm)']))
+            comp_adu = formatar_valor(buscar_campo_mult(row, ['Adutora EEAB até ETA - Comprimento (m)', 'Adutora EEAB ate ETA - Comprimento (m)']))
+            mat_adu = buscar_campo_mult(row, ['Adutora EEAB até ETA - Material', 'Adutora EEAB ate ETA - Material'])
+
+            obs_cap = buscar_campo_mult(row, ['OBSERVAÇÕES', 'Observações', 'Obs', 'OBS'])
+
             if dado_valido(loc): pdf.cell(0, 5.5, f"Localidade/Sistema: {limpar_acentos(loc)}", ln=True)
             if dado_valido(cc_eeab_val): pdf.cell(0, 5.5, f"CC Equatorial EEAB: {cc_eeab_val}", ln=True)
             if dado_valido(tipo): pdf.cell(0, 5.5, f"Tipo de Captacao: {limpar_acentos(tipo)}", ln=True)
@@ -256,7 +266,23 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
                 if dado_valido(alt_res): txt_r += f" | Altura: {alt_res} mca"
                 pdf.cell(0, 5.5, txt_r, ln=True)
 
-            # Inserir Fotos Captação no PDF
+            if dado_valido(crivo):
+                txt_c = f"Possui Crivo: {limpar_acentos(crivo)}"
+                if dado_valido(diam_crivo): txt_c += f" ({diam_crivo} mm)"
+                if dado_valido(mat_crivo): txt_c += f" - {limpar_acentos(mat_crivo)}"
+                pdf.cell(0, 5.5, txt_c, ln=True)
+
+            if dado_valido(diam_adu) or dado_valido(comp_adu):
+                txt_a = "Adutora EEAB -> ETA:"
+                if dado_valido(diam_adu): txt_a += f" Diametro {diam_adu} mm"
+                if dado_valido(mat_adu): txt_a += f" ({limpar_acentos(mat_adu)})"
+                if dado_valido(comp_adu): txt_a += f" | Comprimento: {comp_adu} m"
+                pdf.cell(0, 5.5, txt_a, ln=True)
+
+            if dado_valido(obs_cap):
+                pdf.multi_cell(0, 5.5, f"Obs: {limpar_acentos(obs_cap)}")
+
+            # Fotos Captação
             fotos_cap = extrair_lista_fotos(row, "cap")
             if fotos_cap:
                 pdf.ln(2)
@@ -267,7 +293,7 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
                     y_pos = pdf.get_y()
                 
                 offset_x = 0
-                for idx_f, url_f in enumerate(fotos_cap[:3]): # limita em até 3 fotos por linha
+                for idx_f, url_f in enumerate(fotos_cap[:3]):
                     img_bytes = baixar_imagem_para_pdf(url_f)
                     if img_bytes:
                         pdf.image(img_bytes, x=x_start + offset_x, y=y_pos, w=50, h=35)
@@ -278,7 +304,7 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
             pdf.ln(2)
         pdf.ln(3)
 
-    # --- ETA ---
+    # --- 2. ETA ---
     if not df_e.empty:
         pdf.set_font("Helvetica", "B", 11)
         pdf.cell(0, 7, "2. ESTACAO DE TRATAMENTO DE AGUA (ETA)", ln=True)
@@ -288,8 +314,8 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
             cc_eta = formatar_valor(buscar_campo_mult(row, ['CC Equatorial ETA', 'CC ETA']))
             eta_tipo = buscar_campo_mult(row, ['ETA - Tipo'])
             filtros_qtd = formatar_valor(buscar_campo_mult(row, ['Filtros - Quantidade']))
-            prod_chem = buscar_campo_mult(row, ['Produto Químico Principal'])
-            obs_eta = buscar_campo_mult(row, ['OBSERVAÇÕES', 'Observações'])
+            prod_chem = buscar_campo_mult(row, ['Produto Químico Principal', 'Produto Quimico Principal'])
+            obs_eta = buscar_campo_mult(row, ['OBSERVAÇÕES', 'Observações', 'Obs', 'OBS'])
             
             if dado_valido(loc_eta): pdf.cell(0, 5.5, f"Localidade da ETA: {limpar_acentos(loc_eta)}", ln=True)
             if dado_valido(cc_eta): pdf.cell(0, 5.5, f"CC Equatorial ETA: {cc_eta}", ln=True)
@@ -298,7 +324,7 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
             if dado_valido(prod_chem): pdf.cell(0, 5.5, f"Produtos Quimicos: {limpar_acentos(prod_chem)}", ln=True)
             if dado_valido(obs_eta): pdf.multi_cell(0, 5.5, f"Obs: {limpar_acentos(obs_eta)}")
 
-            # Inserir Fotos ETA no PDF
+            # Fotos ETA
             fotos_eta = extrair_lista_fotos(row, "eta")
             if fotos_eta:
                 pdf.ln(2)
@@ -320,7 +346,7 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
             pdf.ln(2)
         pdf.ln(3)
 
-    # --- POÇOS ---
+    # --- 3. POÇOS ---
     if not df_p.empty:
         pdf.set_font("Helvetica", "B", 11)
         pdf.cell(0, 7, "3. SISTEMA DE POCOS ARTESIANOS (SUBTERRANEO)", ln=True)
@@ -339,14 +365,16 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
             pot_b = formatar_valor(buscar_campo_mult(row, ['Potência da Bomba (cv)']))
             alt_b = formatar_valor(buscar_campo_mult(row, ['Altura da Bomba (mca)']))
             vaz_b = formatar_valor(buscar_campo_mult(row, ['Vazão (m³/h)']))
+            obs_p = buscar_campo_mult(row, ['OBSERVAÇÕES', 'Observações', 'Obs', 'OBS'])
             
             detalhes = []
             if dado_valido(pot_b): detalhes.append(f"Potencia: {pot_b} cv")
             if dado_valido(alt_b): detalhes.append(f"Altura: {alt_b} mca")
             if dado_valido(vaz_b): detalhes.append(f"Vazao: {vaz_b} m3/h")
             if detalhes: pdf.cell(0, 5, "  " + " | ".join(detalhes), ln=True)
+            if dado_valido(obs_p): pdf.multi_cell(0, 5, f"  Obs: {limpar_acentos(obs_p)}")
 
-            # Inserir Fotos do Poço no PDF
+            # Fotos Poço
             fotos_poc = extrair_lista_fotos(row, "poc")
             if fotos_poc:
                 pdf.ln(2)
@@ -515,7 +543,7 @@ try:
                         if dado_valido(comp): txt_adu += f" | Comprimento: {comp} m"
                         st.write(txt_adu)
 
-                    obs_c = buscar_campo_mult(row, ['OBSERVAÇÕES', 'Observações', 'Obs'])
+                    obs_c = buscar_campo_mult(row, ['OBSERVAÇÕES', 'Observações', 'Obs', 'OBS'])
                     if dado_valido(obs_c): st.info(f"**Obs:** {obs_c}")
 
                     # Galeria Fotos Captação
@@ -582,7 +610,7 @@ try:
                     prod_chem = buscar_campo_mult(row, ['Produto Químico Principal', 'Produto Quimico Principal'])
                     if dado_valido(prod_chem): st.write(f"**Produtos Químicos:** {prod_chem}")
 
-                    obs_e = buscar_campo_mult(row, ['OBSERVAÇÕES', 'Observações', 'Obs'])
+                    obs_e = buscar_campo_mult(row, ['OBSERVAÇÕES', 'Observações', 'Obs', 'OBS'])
                     if dado_valido(obs_e): st.info(f"**Obs:** {obs_e}")
 
                     # Galeria Fotos ETA
