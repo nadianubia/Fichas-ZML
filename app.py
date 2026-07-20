@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from fpdf import FPDF
 import os
+import re
 
 # Configuração da página para modo amplo (wide)
 st.set_page_config(
@@ -88,12 +89,45 @@ def buscar_campo_mult(row, lista_colunas):
                     return val
     return None
 
+def formatar_link_drive(url):
+    """Converte link de compartilhamento do Google Drive para link de exibição direta de imagem"""
+    if not dado_valido(url):
+        return None
+    url_str = str(url).strip()
+    match = re.search(r'(?:file/d/|id=)([\w-]+)', url_str)
+    if match:
+        file_id = match.group(1)
+        return f"https://drive.google.com/uc?export=view&id={file_id}"
+    return url_str
+
+def extrair_lista_fotos(row, prefixos_colunas):
+    """Busca todas as colunas de fotos (01, 02, 03 ou padrão) e retorna os links convertidos"""
+    fotos = []
+    for pref in prefixos_colunas:
+        for sufixo in ['', ' 01', ' 1', ' 02', ' 2', ' 03', ' 3']:
+            col_nome = f"{pref}{sufixo}"
+            val = buscar_campo_mult(row, [col_nome])
+            if val:
+                link_fmt = formatar_link_drive(val)
+                if link_fmt and link_fmt not in fotos:
+                    fotos.append(link_fmt)
+    return fotos
+
+def exibir_galeria_fotos(fotos, legenda_base="Foto"):
+    """Exibe até 3 fotos em colunas elegantes dentro do card"""
+    if not fotos:
+        return
+    st.markdown("<div style='margin-top: 15px;'><b>📷 Registros Fotográficos:</b></div>", unsafe_allow_html=True)
+    cols = st.columns(len(fotos))
+    for idx, (col, url_foto) in enumerate(zip(cols, fotos)):
+        with col:
+            st.image(url_foto, caption=f"{legenda_base} - {idx+1}", use_container_width=True)
+
 def converter_coordenada(val):
     if not dado_valido(val):
         return None
     try:
         texto = str(val).strip().replace(',', '.')
-        import re
         match = re.search(r'[-+]?\d*\.\d+|\d+', texto)
         if match:
             num = float(match.group())
@@ -382,6 +416,10 @@ try:
                     obs_c = buscar_campo_mult(row, ['OBSERVAÇÕES', 'Observações', 'Obs'])
                     if dado_valido(obs_c): st.info(f"**Obs:** {obs_c}")
 
+                    # --- GALERIA DE FOTOS CAPTAÇÃO ---
+                    fotos_cap = extrair_lista_fotos(row, ['Foto Captação', 'Foto Captacao', 'Foto'])
+                    exibir_galeria_fotos(fotos_cap, legenda_base="Captação/EEAB")
+
                     st.markdown("---")
                 st.markdown("</div>", unsafe_allow_html=True)
 
@@ -445,6 +483,10 @@ try:
                     obs_e = buscar_campo_mult(row, ['OBSERVAÇÕES', 'Observações', 'Obs'])
                     if dado_valido(obs_e): st.info(f"**Obs:** {obs_e}")
 
+                    # --- GALERIA DE FOTOS ETA ---
+                    fotos_eta = extrair_lista_fotos(row, ['Foto ETA', 'Foto'])
+                    exibir_galeria_fotos(fotos_eta, legenda_base="ETA")
+
                     st.markdown("---")
                 st.markdown("</div>", unsafe_allow_html=True)
 
@@ -482,6 +524,10 @@ try:
                 if dado_valido(pot_b): st.write(f"**Potência da Bomba:** {pot_b} cv")
                 if dado_valido(alt_b): st.write(f"**Altura da Bomba:** {alt_b} mca")
                 if dado_valido(vaz_b): st.write(f"**Vazão Cadastrada:** {vaz_b} m³/h")
+
+                # --- GALERIA DE FOTOS POÇO ---
+                fotos_poc = extrair_lista_fotos(row, ['Foto'])
+                exibir_galeria_fotos(fotos_poc, legenda_base="Poço")
                 
                 st.markdown("</div>", unsafe_allow_html=True)
             idx += 1
@@ -507,9 +553,7 @@ try:
             st.markdown("---")
             st.header("📍 Geolocalização das Unidades Operacionais")
             
-            # Criando duas colunas para o mapa compactado e a lista ao lado
             col_mapa, col_lista = st.columns([1, 1])
-            
             df_mapa = pd.DataFrame(pontos_mapa)
             
             with col_mapa:
