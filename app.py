@@ -305,30 +305,6 @@ try:
     st.write(f"Exibindo dados operacionais atuais para: **{municipio_selecionado}**")
     st.markdown("---")
 
-    # --- SEÇÃO DE MAPA / GEOLOCALIZAÇÃO ---
-    if not dados_geo.empty:
-        pontos_mapa = []
-        for _, r_g in dados_geo.iterrows():
-            lat_col = buscar_campo_mult(r_g, ['Latitude', 'LATITUDE', 'Lat'])
-            lon_col = buscar_campo_mult(r_g, ['Longitude', 'LONGITUDE', 'Long', 'Lon'])
-            
-            lat_f = converter_coordenada(lat_col)
-            lon_f = converter_coordenada(lon_col)
-            
-            if lat_f is not None and lon_f is not None:
-                nome_est = buscar_campo_mult(r_g, ['Unidade', 'UNIDADE', 'Descrição', 'Descricao', 'Estrutura', 'Nome']) or 'Unidade Operacional'
-                pontos_mapa.append({'latitude': lat_f, 'longitude': lon_f, 'Unidade': str(nome_est)})
-
-        if pontos_mapa:
-            st.header("📍 Localização das Unidades Operacionais")
-            df_mapa = pd.DataFrame(pontos_mapa)
-            st.map(df_mapa, latitude='latitude', longitude='longitude', zoom=12, use_container_width=True)
-            
-            with st.expander("📍 Ver coordenadas detalhadas deste município"):
-                for p in pontos_mapa:
-                    st.write(f"• **{p['Unidade']}**: `Lat: {p['latitude']}, Lon: {p['longitude']}` — [Ver no Google Maps](https://www.google.com/maps/search/?api=1&query={p['latitude']},{p['longitude']})")
-            st.markdown("---")
-
     cc_eeab_da_eta = None
     if not dados_eta.empty:
         for _, r_e in dados_eta.iterrows():
@@ -337,7 +313,7 @@ try:
                 cc_eeab_da_eta = val
                 break
 
-    # --- EXIBIÇÃO NA TELA ---
+    # --- EXIBIÇÃO DA INFRAESTRUTURA NA TELA ---
     if not dados_cap.empty or not dados_eta.empty:
         st.header("🏢 Infraestrutura de Tratamento e Distribuição Superficial")
         col_cap, col_eta = st.columns(2)
@@ -512,6 +488,40 @@ try:
 
     if dados_cap.empty and dados_eta.empty and dados_poc.empty:
         st.info("Nenhuma estrutura localizada para este município nos registros da planilha.")
+
+    # --- SEÇÃO DE GEOLOCALIZAÇÃO NO FINAL DA PÁGINA (LADO A LADO) ---
+    if not dados_geo.empty:
+        pontos_mapa = []
+        for _, r_g in dados_geo.iterrows():
+            lat_col = buscar_campo_mult(r_g, ['Latitude', 'LATITUDE', 'Lat'])
+            lon_col = buscar_campo_mult(r_g, ['Longitude', 'LONGITUDE', 'Long', 'Lon'])
+            
+            lat_f = converter_coordenada(lat_col)
+            lon_f = converter_coordenada(lon_col)
+            
+            if lat_f is not None and lon_f is not None:
+                nome_est = buscar_campo_mult(r_g, ['Unidade', 'UNIDADE', 'Descrição', 'Descricao', 'Estrutura', 'Nome']) or 'Unidade Operacional'
+                pontos_mapa.append({'latitude': lat_f, 'longitude': lon_f, 'Unidade': str(nome_est)})
+
+        if pontos_mapa:
+            st.markdown("---")
+            st.header("📍 Geolocalização das Unidades Operacionais")
+            
+            # Criando duas colunas para o mapa compactado e a lista ao lado
+            col_mapa, col_lista = st.columns([1, 1])
+            
+            df_mapa = pd.DataFrame(pontos_mapa)
+            
+            with col_mapa:
+                st.map(df_mapa, latitude='latitude', longitude='longitude', zoom=12, use_container_width=True)
+                
+            with col_lista:
+                st.markdown("<div class='card'><div class='card-title'>📌 Coordenadas e Acesso GPS</div>", unsafe_allow_html=True)
+                for p in pontos_mapa:
+                    st.write(f"• **{p['Unidade']}**")
+                    st.caption(f"Lat: `{p['latitude']}` | Lon: `{p['longitude']}` — [🌐 Google Maps](https://www.google.com/maps/search/?api=1&query={p['latitude']},{p['longitude']})")
+                    st.markdown("<div style='margin-bottom: 8px;'></div>", unsafe_allow_html=True)
+                st.markdown("</div>", unsafe_allow_html=True)
 
 except Exception as e:
     st.error(f"Erro na leitura dos dados: {e}")
