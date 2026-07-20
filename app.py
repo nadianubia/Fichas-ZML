@@ -90,38 +90,56 @@ def buscar_campo_mult(row, lista_colunas):
     return None
 
 def formatar_link_drive(url):
-    """Converte link de compartilhamento do Google Drive para link de exibição direta de imagem"""
+    """Converte links do Google Drive para visualização direta de imagem"""
     if not dado_valido(url):
         return None
     url_str = str(url).strip()
+    # Captura o ID do arquivo em links de compartilhamento
     match = re.search(r'(?:file/d/|id=)([\w-]+)', url_str)
     if match:
         file_id = match.group(1)
-        return f"https://drive.google.com/uc?export=view&id={file_id}"
+        # Link de renderização direta do Google Drive
+        return f"https://lh3.googleusercontent.com/d/{file_id}"
     return url_str
 
-def extrair_lista_fotos(row, prefixos_colunas):
-    """Busca todas as colunas de fotos (01, 02, 03 ou padrão) e retorna os links convertidos"""
+def extrair_lista_fotos(row, tipo_aba):
+    """Busca dinâmica por colunas de foto (01, 02, 03) independente da aba"""
     fotos = []
-    for pref in prefixos_colunas:
-        for sufixo in ['', ' 01', ' 1', ' 02', ' 2', ' 03', ' 3']:
-            col_nome = f"{pref}{sufixo}"
-            val = buscar_campo_mult(row, [col_nome])
+    
+    # Define variações possíveis baseadas no tipo de aba
+    opcoes = []
+    if tipo_aba == "cap":
+        opcoes = ["Foto Captação", "Foto Captacao", "Foto"]
+    elif tipo_aba == "eta":
+        opcoes = ["Foto ETA", "Foto"]
+    elif tipo_aba == "poc":
+        opcoes = ["Foto Poço", "Foto Poco", "Foto"]
+
+    sufixos = ['', ' 01', ' 1', ' 02', ' 2', ' 03', ' 3']
+
+    for pref in opcoes:
+        for suf in sufixos:
+            nome_col = f"{pref}{suf}"
+            val = buscar_campo_mult(row, [nome_col])
             if val:
                 link_fmt = formatar_link_drive(val)
                 if link_fmt and link_fmt not in fotos:
                     fotos.append(link_fmt)
+
     return fotos
 
 def exibir_galeria_fotos(fotos, legenda_base="Foto"):
-    """Exibe até 3 fotos em colunas elegantes dentro do card"""
+    """Exibe até 3 fotos em colunas lado a lado no card"""
     if not fotos:
         return
     st.markdown("<div style='margin-top: 15px;'><b>📷 Registros Fotográficos:</b></div>", unsafe_allow_html=True)
     cols = st.columns(len(fotos))
     for idx, (col, url_foto) in enumerate(zip(cols, fotos)):
         with col:
-            st.image(url_foto, caption=f"{legenda_base} - {idx+1}", use_container_width=True)
+            try:
+                st.image(url_foto, caption=f"{legenda_base} - {idx+1}", use_container_width=True)
+            except Exception:
+                st.markdown(f"[🔗 Abrir {legenda_base} {idx+1}]({url_foto})")
 
 def converter_coordenada(val):
     if not dado_valido(val):
@@ -417,7 +435,7 @@ try:
                     if dado_valido(obs_c): st.info(f"**Obs:** {obs_c}")
 
                     # --- GALERIA DE FOTOS CAPTAÇÃO ---
-                    fotos_cap = extrair_lista_fotos(row, ['Foto Captação', 'Foto Captacao', 'Foto'])
+                    fotos_cap = extrair_lista_fotos(row, "cap")
                     exibir_galeria_fotos(fotos_cap, legenda_base="Captação/EEAB")
 
                     st.markdown("---")
@@ -484,7 +502,7 @@ try:
                     if dado_valido(obs_e): st.info(f"**Obs:** {obs_e}")
 
                     # --- GALERIA DE FOTOS ETA ---
-                    fotos_eta = extrair_lista_fotos(row, ['Foto ETA', 'Foto'])
+                    fotos_eta = extrair_lista_fotos(row, "eta")
                     exibir_galeria_fotos(fotos_eta, legenda_base="ETA")
 
                     st.markdown("---")
@@ -526,7 +544,7 @@ try:
                 if dado_valido(vaz_b): st.write(f"**Vazão Cadastrada:** {vaz_b} m³/h")
 
                 # --- GALERIA DE FOTOS POÇO ---
-                fotos_poc = extrair_lista_fotos(row, ['Foto'])
+                fotos_poc = extrair_lista_fotos(row, "poc")
                 exibir_galeria_fotos(fotos_poc, legenda_base="Poço")
                 
                 st.markdown("</div>", unsafe_allow_html=True)
