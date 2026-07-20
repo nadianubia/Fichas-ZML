@@ -87,35 +87,41 @@ def limpar_acentos(texto):
     import unicodedata
     return "".join(c for c in unicodedata.normalize('NFD', str(texto)) if unicodedata.category(c) != 'Mn')
 
+# Busca o valor ignorando diferenças de maiúsculas/minúsculas e acentos
+def buscar_campo(row, nome_coluna):
+    nome_norm = limpar_acentos(nome_coluna).upper().strip()
+    for col in row.index:
+        if limpar_acentos(col).upper().strip() == nome_norm:
+            val = row.get(col)
+            if dado_valido(val):
+                return val
+    return None
+
 @st.cache_data(ttl=60)
 def carregar_dados():
     try:
         df_cap = pd.read_csv(base_url + "DADOS_CAPTACAO")
-        df_cap.columns = [c.strip().upper() for c in df_cap.columns]
     except:
-        df_cap = pd.DataFrame(columns=['MUNICÍPIO'])
+        df_cap = pd.DataFrame(columns=['Município'])
         
     try:
         df_eta = pd.read_csv(base_url + "DADOS_ETA_EEAB")
-        df_eta.columns = [c.strip().upper() for c in df_eta.columns]
     except:
-        df_eta = pd.DataFrame(columns=['MUNICÍPIO'])
+        df_eta = pd.DataFrame(columns=['Município'])
         
     try:
         df_poc = pd.read_csv(base_url + "DADOS_POCOS")
-        df_poc.columns = [c.strip().upper() for c in df_poc.columns]
     except:
-        df_poc = pd.DataFrame(columns=['MUNICÍPIO'])
+        df_poc = pd.DataFrame(columns=['Município'])
         
     try:
         df_adu = pd.read_csv(base_url + "ADUTORAS_INTERLIGACAO")
-        df_adu.columns = [c.strip().upper() for c in df_adu.columns]
     except:
         df_adu = pd.DataFrame()
         
     return df_cap, df_eta, df_poc, df_adu
 
-# --- FUNÇÃO PARA GERAR O PDF DINÂMICO ---
+# --- GERADOR DE PDF ---
 def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
     pdf = FPDF()
     pdf.add_page()
@@ -145,30 +151,13 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
         pdf.cell(0, 7, "1. DADOS DA CAPTACAO SUPERFICIAL E ADUTORAS/EEAB", ln=True)
         pdf.set_font("Helvetica", "", 10)
         for _, row in df_c.iterrows():
-            loc = row.get('LOCALIDADE', '')
-            tipo = row.get('CAPTAÇÃO - TIPO', row.get('CAPTACAO - TIPO', ''))
-            vaz_cap = formatar_valor(row.get('VAZÃO', row.get('VAZAO', '')))
-            diam = formatar_valor(row.get('ADUTORA AB ATÉ EEAB - DIÂMETRO (MM)', row.get('ADUTORA AB ATE EEAB - DIAMETRO (MM)', '')))
-            
-            bomba = row.get('EEAB - TIPO DA BOMBA PRINCIPAL', '')
-            pot = formatar_valor(row.get('EEAB - POTÊNCIA PRINCIPAL (CV)', row.get('EEAB - POTENCIA PRINCIPAL (CV)', '')))
-            obs_cap = row.get('OBSERVAÇÕES', row.get('OBSERVACOES', ''))
+            loc = buscar_campo(row, 'Localidade')
+            tipo = buscar_campo(row, 'Captação - Tipo')
+            diam = formatar_valor(buscar_campo(row, 'Adutora AB até EEAB - Diâmetro (mm)'))
             
             if dado_valido(loc): pdf.cell(0, 5.5, f"Localidade/Sistema: {limpar_acentos(loc)}", ln=True)
             if dado_valido(tipo): pdf.cell(0, 5.5, f"Tipo de Captacao: {limpar_acentos(tipo)}", ln=True)
-            if dado_valido(vaz_cap): pdf.cell(0, 5.5, f"Vazao da Captacao: {vaz_cap} m3/h", ln=True)
             if dado_valido(diam): pdf.cell(0, 5.5, f"Adutora AB ate EEAB: Diametro {diam}mm", ln=True)
-            
-            if not df_e.empty:
-                cc_eeab_aux = formatar_valor(df_e.iloc[0].get('CC EQUATORIAL EEAB'))
-                if dado_valido(cc_eeab_aux):
-                    pdf.cell(0, 5.5, f"CC Equatorial EEAB: {cc_eeab_aux}", ln=True)
-
-            if dado_valido(bomba) or dado_valido(pot): 
-                pdf.cell(0, 5.5, f"Bomba Elevatoria (EEAB): {limpar_acentos(bomba)} | Potencia: {pot} cv", ln=True)
-            
-            if dado_valido(obs_cap): 
-                pdf.multi_cell(0, 5.5, f"Obs: {limpar_acentos(obs_cap)}")
             pdf.ln(1.5)
         pdf.ln(3)
 
@@ -177,17 +166,21 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
         pdf.cell(0, 7, "2. ESTACAO DE TRATAMENTO DE AGUA (ETA)", ln=True)
         pdf.set_font("Helvetica", "", 10)
         for _, row in df_e.iterrows():
-            loc_eta = row.get('LOCALIDADE', '')
-            vaz_chg = formatar_valor(row.get('VAZÃO DE CHEGADA NA ETA', row.get('VAZAO DE CHEGADA NA ETA', '')))
-            cc_eta_aux = formatar_valor(row.get('CC EQUATORIAL ETA'))
-            obs_eta = row.get('OBSERVAÇÕES', row.get('OBSERVACOES', ''))
+            loc_eta = buscar_campo(row, 'Localidade')
+            cc_eta = formatar_valor(buscar_campo(row, 'CC Equatorial ETA'))
+            cc_eeab = formatar_valor(buscar_campo(row, 'CC Equatorial EEAB'))
+            bomba = buscar_campo(row, 'EEAB - Tipo da Bomba Principal')
+            pot = formatar_valor(buscar_campo(row, 'EEAB - Potência Principal (cv)'))
+            vaz = formatar_valor(buscar_campo(row, 'EEAB - Vazão Principal (m³/h)'))
+            alt = formatar_valor(buscar_campo(row, 'EEAB - Altura Manométrica Principal (mca)'))
+            obs_eta = buscar_campo(row, 'Observações')
             
             if dado_valido(loc_eta): pdf.cell(0, 5.5, f"Localidade da ETA: {limpar_acentos(loc_eta)}", ln=True)
-            if dado_valido(cc_eta_aux): pdf.cell(0, 5.5, f"CC Equatorial ETA: {cc_eta_aux}", ln=True)
-            if dado_valido(vaz_chg): pdf.cell(0, 5.5, f"Vazao de Chegada na ETA: {vaz_chg} m3/h", ln=True)
-            
-            if dado_valido(obs_eta): 
-                pdf.multi_cell(0, 5.5, f"Obs: {limpar_acentos(obs_eta)}")
+            if dado_valido(cc_eta): pdf.cell(0, 5.5, f"CC Equatorial ETA: {cc_eta}", ln=True)
+            if dado_valido(cc_eeab): pdf.cell(0, 5.5, f"CC Equatorial EEAB: {cc_eeab}", ln=True)
+            if dado_valido(bomba) or dado_valido(pot): pdf.cell(0, 5.5, f"Bomba EEAB: {limpar_acentos(bomba)} | Potencia: {pot} cv", ln=True)
+            if dado_valido(vaz) or dado_valido(alt): pdf.cell(0, 5.5, f"Vazao e Altura EEAB: {vaz} m3/h | {alt} mca", ln=True)
+            if dado_valido(obs_eta): pdf.multi_cell(0, 5.5, f"Obs: {limpar_acentos(obs_eta)}")
             pdf.ln(1.5)
         pdf.ln(3)
 
@@ -195,27 +188,20 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
         pdf.set_font("Helvetica", "B", 11)
         pdf.cell(0, 7, "3. SISTEMA DE POCOS ARTESIANOS (SUBTERRANEO)", ln=True)
         for _, row in df_p.iterrows():
-            id_p = row.get('IDENTIFICAÇÃO DO POÇO', row.get('IDENTIFICACAO DO POCO', 'Poco'))
+            id_p = buscar_campo(row, 'Identificação do Poço') or 'Poco'
             pdf.set_font("Helvetica", "B", 10)
             pdf.cell(0, 5.5, f"Poco: {limpar_acentos(id_p)}", ln=True)
             pdf.set_font("Helvetica", "", 10)
             
+            pot_b = formatar_valor(buscar_campo(row, 'Potência da Bomba (cv)'))
+            alt_b = formatar_valor(buscar_campo(row, 'Altura da Bomba (mca)'))
+            vaz_b = formatar_valor(buscar_campo(row, 'Vazão (m³/h)'))
+            
             detalhes = []
-            pot_b = formatar_valor(row.get('POTÊNCIA DA BOMBA (CV)', row.get('POTENCIA DA BOMBA (CV)')))
-            vaz_b = formatar_valor(row.get('VAZÃO (M³/H)', row.get('VAZAO (M³/H)')))
-            cc_eq = formatar_valor(row.get('CC EQUATORIAL'))
-            obs_poc = row.get('OBSERVAÇÕES', row.get('OBSERVACOES', ''))
-            
-            if dado_valido(cc_eq): detalhes.append(f"CC Equatorial: {cc_eq}")
             if dado_valido(pot_b): detalhes.append(f"Potencia: {pot_b} cv")
+            if dado_valido(alt_b): detalhes.append(f"Altura: {alt_b} mca")
             if dado_valido(vaz_b): detalhes.append(f"Vazao: {vaz_b} m3/h")
-            
-            if detalhes:
-                pdf.cell(0, 5, "  " + " | ".join(detalhes), ln=True)
-                
-            if dado_valido(obs_poc):
-                pdf.set_x(10)
-                pdf.multi_cell(0, 5, f"  Obs: {limpar_acentos(obs_poc)}")
+            if detalhes: pdf.cell(0, 5, "  " + " | ".join(detalhes), ln=True)
             pdf.ln(1)
             
     return pdf.output()
@@ -223,27 +209,24 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
 try:
     df_captacao, df_eta_eeab, df_pocos, df_adutoras = carregar_dados()
     
-    for df in [df_captacao, df_eta_eeab, df_pocos]:
-        if 'MUNICIPIO' in df.columns and 'MUNICÍPIO' not in df.columns:
-            df.rename(columns={'MUNICIPIO': 'MUNICÍPIO'}, inplace=True)
-            
-    todos_muns = []
-    for df in [df_captacao, df_eta_eeab, df_pocos]:
-        if 'MUNICÍPIO' in df.columns:
-            todos_muns.extend(df['MUNICÍPIO'].dropna().astype(str).str.strip().str.upper().unique().tolist())
-            
+    # Normalizar busca por municípios
+    def obter_municipios(df):
+        for col in df.columns:
+            if limpar_acentos(col).upper().strip() in ['MUNICIPIO', 'MUNICPIO ORIGEM']:
+                return df[col].dropna().astype(str).str.strip().str.upper().unique().tolist()
+        return []
+
+    todos_muns = obter_municipios(df_captacao) + obter_municipios(df_eta_eeab) + obter_municipios(df_pocos)
     todos_municipios = sorted(list(set(todos_muns)))
 
     if not todos_municipios:
         st.warning("Nenhum município localizado nas tabelas da planilha. Verifique o preenchimento.")
         st.stop()
 
-    # --- BLOCO DO CABEÇALHO ---
+    # --- CABEÇALHO ---
     margem_esq, col_logo, col_texto, margem_dir = st.columns([1, 1.3, 5, 1])
-    
     with col_logo:
-        if LOGO_PATH:
-            st.image(LOGO_PATH, width=140)
+        if LOGO_PATH: st.image(LOGO_PATH, width=140)
             
     with col_texto:
         st.markdown("""
@@ -256,16 +239,22 @@ try:
     st.markdown("---")
 
     col_sel, col_btn = st.columns([3, 1])
-    
     with col_sel:
-        municipio_selecionado = st.selectbox(
-            "🔍 Escolha o Município para visualizar os dados técnicos:", 
-            todos_municipios
-        )
+        municipio_selecionado = st.selectbox("🔍 Escolha o Município para visualizar os dados técnicos:", todos_municipios)
     
-    dados_cap = df_captacao[df_captacao['MUNICÍPIO'].astype(str).str.strip().str.upper() == municipio_selecionado] if 'MUNICÍPIO' in df_captacao.columns else pd.DataFrame()
-    dados_eta = df_eta_eeab[df_eta_eeab['MUNICÍPIO'].astype(str).str.strip().str.upper() == municipio_selecionado] if 'MUNICÍPIO' in df_eta_eeab.columns else pd.DataFrame()
-    dados_poc = df_pocos[df_pocos['MUNICÍPIO'].astype(str).str.strip().str.upper() == municipio_selecionado] if 'MUNICÍPIO' in df_pocos.columns else pd.DataFrame()
+    def filtrar_por_municipio(df, col_nome='Município'):
+        col_real = None
+        for c in df.columns:
+            if limpar_acentos(c).upper().strip() == limpar_acentos(col_nome).upper().strip():
+                col_real = c
+                break
+        if col_real:
+            return df[df[col_real].astype(str).str.strip().str.upper() == municipio_selecionado]
+        return pd.DataFrame()
+
+    dados_cap = filtrar_por_municipio(df_captacao)
+    dados_eta = filtrar_por_municipio(df_eta_eeab)
+    dados_poc = filtrar_por_municipio(df_pocos)
     
     with col_btn:
         st.write("") 
@@ -282,13 +271,12 @@ try:
                 use_container_width=True
             )
         except Exception as pdf_err:
-            st.error("Erro ao gerar botão de PDF")
+            st.error("Erro ao gerar PDF")
 
     st.write(f"Exibindo dados operacionais atuais para: **{municipio_selecionado}**")
     st.markdown("---")
 
-    # --- INTERFACE ADAPTATIVA DO PAINEL ---
-    
+    # --- EXIBIÇÃO NA TELA ---
     if not dados_cap.empty or not dados_eta.empty:
         st.header("🏢 Infraestrutura de Tratamento e Distribuição Superficial")
         col_cap, col_eta = st.columns(2)
@@ -297,56 +285,36 @@ try:
             if not dados_cap.empty:
                 st.markdown("<div class='card'><div class='card-title'>🪵 DADOS DA CAPTAÇÃO E ADUTORAS/EEAB</div>", unsafe_allow_html=True)
                 for _, row in dados_cap.iterrows():
-                    if dado_valido(row.get('LOCALIDADE')): st.write(f"**Localidade/Sistema:** {row.get('LOCALIDADE')}")
-                    if dado_valido(row.get('CAPTAÇÃO - TIPO', row.get('CAPTACAO - TIPO'))): st.write(f"**Tipo de Captação:** {row.get('CAPTAÇÃO - TIPO', row.get('CAPTACAO - TIPO'))}")
+                    loc_c = buscar_campo(row, 'Localidade')
+                    if dado_valido(loc_c): st.write(f"**Localidade/Sistema:** {loc_c}")
                     
-                    vaz_captacao = formatar_valor(row.get('VAZÃO', row.get('VAZAO')))
-                    if dado_valido(vaz_captacao): st.write(f"**Vazão da Captação:** {vaz_captacao} m³/h")
+                    tipo_cap = buscar_campo(row, 'Captação - Tipo')
+                    if dado_valido(tipo_cap): st.write(f"**Tipo de Captação:** {tipo_cap}")
                     
-                    crivo = row.get('CAPTAÇÃO - POSSUI CRIVO', row.get('CAPTACAO - POSSUI CRIVO'))
-                    mat_crivo = row.get('CAPTAÇÃO - MATERIAL CRIVO', row.get('CAPTACAO - MATERIAL CRIVO'))
+                    crivo = buscar_campo(row, 'Captação - Possui Crivo')
+                    mat_crivo = buscar_campo(row, 'Captação - Material Crivo')
+                    diam_crivo = formatar_valor(buscar_campo(row, 'Captação - Diâmetro Crivo (mm)'))
                     if dado_valido(crivo):
-                        txt_crivo = f"**Possui Crivo:** {crivo}"
-                        if dado_valido(mat_crivo): txt_crivo += f" ({mat_crivo})"
-                        st.write(txt_crivo)
+                        txt_c = f"**Possui Crivo:** {crivo}"
+                        if dado_valido(diam_crivo): txt_c += f" ({diam_crivo} mm)"
+                        if dado_valido(mat_crivo): txt_c += f" - {mat_crivo}"
+                        st.write(txt_c)
                     
-                    diam = formatar_valor(row.get('ADUTORA AB ATÉ EEAB - DIÂMETRO (MM)', row.get('ADUTORA AB ATE EEAB - DIAMETRO (MM)')))
-                    comp = formatar_valor(row.get('ADUTORA AB ATÉ EEAB - COMPRIMENTO (M)', row.get('ADUTORA AB ATE EEAB - COMPRIMENTO (M)')))
+                    diam = formatar_valor(buscar_campo(row, 'Adutora AB até EEAB - Diâmetro (mm)'))
+                    comp = formatar_valor(buscar_campo(row, 'Adutora AB até EEAB - Comprimento (m)'))
+                    mat_adu = buscar_campo(row, 'Adutora AB até EEAB - Material')
                     if dado_valido(diam) or dado_valido(comp):
                         txt_adu = "**Adutora AB até EEAB:**"
                         if dado_valido(diam): txt_adu += f" Diâmetro {diam} mm"
+                        if dado_valido(mat_adu): txt_adu += f" ({mat_adu})"
                         if dado_valido(comp): txt_adu += f" | Comprimento: {comp} m"
                         st.write(txt_adu)
-                    
-                    bomba = row.get('EEAB - TIPO DA BOMBA PRINCIPAL')
-                    pot = formatar_valor(row.get('EEAB - POTÊNCIA PRINCIPAL (CV)', row.get('EEAB - POTENCIA PRINCIPAL (CV)')))
-                    if dado_valido(bomba) or dado_valido(pot):
-                        txt_b = "**Bomba Elevatória (EEAB):**"
-                        if dado_valido(bomba): txt_b += f" {bomba}"
-                        if dado_valido(pot): txt_b += f" | Potência: {pot} cv"
-                        st.write(txt_b)
-                        
-                    vaz = formatar_valor(row.get('EEAB - VAZÃO PRINCIPAL (M³/H)', row.get('EEAB - VAZAO PRINCIPAL (M³/H)')))
-                    alt = formatar_valor(row.get('EEAB - ALTURA MANOMÉTRICA PRINCIPAL (MCA)', row.get('EEAB - ALTURA MANOMETRICA PRINCIPAL (MCA)')))
-                    if dado_valido(vaz) or dado_valido(alt):
-                        txt_v = "**Vazão e Altura da EEAB:**"
-                        if dado_valido(vaz): txt_v += f" {vaz} m³/h"
-                        if dado_valido(alt): txt_v += f" | {alt} mca"
-                        st.write(txt_v)
 
-                    # --- EXIBIÇÃO DA CC EQUATORIAL DA EEAB (BUSCANDO DA TABELA ETA) ---
-                    if not dados_eta.empty:
-                        cc_eeab = formatar_valor(dados_eta.iloc[0].get('CC EQUATORIAL EEAB'))
-                        if dado_valido(cc_eeab): st.write(f"**⚡ CC Equatorial EEAB:** {cc_eeab}")
-                    
-                    foto_cap = row.get('LINK DA FOTO')
+                    # EXIBIÇÃO DE FOTO VIA COLUNA 'Localização Captação'
+                    foto_cap = buscar_campo(row, 'Localização Captação')
                     if dado_valido(foto_cap):
                         st.image(str(foto_cap), caption="Foto da Captação", use_container_width=True)
-                        
-                    obs_c = row.get('OBSERVAÇÕES', row.get('OBSERVACOES'))
-                    if dado_valido(obs_c):
-                        st.info(f"**Obs:** {obs_c}")
-                        
+
                     st.markdown("---")
                 st.markdown("</div>", unsafe_allow_html=True)
 
@@ -354,37 +322,50 @@ try:
             if not dados_eta.empty:
                 st.markdown("<div class='card'><div class='card-title'>⚡ ESTAÇÃO DE TRATAMENTO DE ÁGUA (ETA)</div>", unsafe_allow_html=True)
                 for _, row in dados_eta.iterrows():
-                    if dado_valido(row.get('LOCALIDADE')): st.write(f"**Localidade da ETA:** {row.get('LOCALIDADE')}")
+                    loc_e = buscar_campo(row, 'Localidade')
+                    if dado_valido(loc_e): st.write(f"**Localidade da ETA:** {loc_e}")
                     
-                    vaz_chegada = formatar_valor(row.get('VAZÃO DE CHEGADA NA ETA', row.get('VAZAO DE CHEGADA NA ETA')))
-                    if dado_valido(vaz_chegada): st.write(f"**🌊 Vazão de Chegada na ETA:** {vaz_chegada} m³/h")
+                    cc_eeab = formatar_valor(buscar_campo(row, 'CC Equatorial EEAB'))
+                    if dado_valido(cc_eeab): st.write(f"**⚡ CC Equatorial EEAB:** {cc_eeab}")
+
+                    cc_eta = formatar_valor(buscar_campo(row, 'CC Equatorial ETA'))
+                    if dado_valido(cc_eta): st.write(f"**⚡ CC Equatorial ETA:** {cc_eta}")
                     
-                    cc_eq_eta = formatar_valor(row.get('CC EQUATORIAL ETA'))
-                    if dado_valido(cc_eq_eta): st.write(f"**⚡ CC Equatorial ETA:** {cc_eq_eta}")
+                    bomba = buscar_campo(row, 'EEAB - Tipo da Bomba Principal')
+                    pot = formatar_valor(buscar_campo(row, 'EEAB - Potência Principal (cv)'))
+                    if dado_valido(bomba) or dado_valido(pot):
+                        txt_b = "**Bomba Elevatória (EEAB):**"
+                        if dado_valido(bomba): txt_b += f" {bomba}"
+                        if dado_valido(pot): txt_b += f" | Potência: {pot} cv"
+                        st.write(txt_b)
                         
-                    foto_eta = row.get('LINK DA FOTO')
+                    vaz = formatar_valor(buscar_campo(row, 'EEAB - Vazão Principal (m³/h)'))
+                    alt = formatar_valor(buscar_campo(row, 'EEAB - Altura Manométrica Principal (mca)'))
+                    if dado_valido(vaz) or dado_valido(alt):
+                        st.write(f"**Vazão e Altura da EEAB:** {vaz} m³/h | {alt} mca")
+                    
+                    obs_e = buscar_campo(row, 'Observações')
+                    if dado_valido(obs_e): st.info(f"**Obs:** {obs_e}")
+
+                    # EXIBIÇÃO DE FOTO VIA COLUNA 'Localização ETA'
+                    foto_eta = buscar_campo(row, 'Localização ETA')
                     if dado_valido(foto_eta):
                         st.image(str(foto_eta), caption="Foto da ETA", use_container_width=True)
-                        
-                    obs_e = row.get('OBSERVAÇÕES', row.get('OBSERVACOES'))
-                    if dado_valido(obs_e):
-                        st.info(f"**Obs:** {obs_e}")
-                        
+
                     st.markdown("---")
                 st.markdown("</div>", unsafe_allow_html=True)
 
-    # 2. Seção de Adutoras Interligadas Especiais
+    # 2. Seção de Adutoras Interligadas
     if not df_adutoras.empty:
-        c_origem = 'MUNICÍPIO ORIGEM' if 'MUNICÍPIO ORIGEM' in df_adutoras.columns else 'MUNICIPIO ORIGEM'
-        c_destino = 'MUNICÍPIO DESTINO' if 'MUNICÍPIO DESTINO' in df_adutoras.columns else 'MUNICIPIO DESTINO'
-        if c_origem in df_adutoras.columns and c_destino in df_adutoras.columns:
-            dados_adu = df_adutoras[(df_adutoras[c_origem].astype(str).str.strip().str.upper() == municipio_selecionado) | 
-                                    (df_adutoras[c_destino].astype(str).str.strip().str.upper() == municipio_selecionado)]
-            if not dados_adu.empty:
-                st.header("🔗 Sistemas Interligados / Adutoras de Exportação")
-                for _, row in dados_adu.iterrows():
-                    diam_adu = formatar_valor(row.get('DIÂMETRO DA ADUTORA (MM)', row.get('DIAMETRO DA ADUTORA (MM)', '—')))
-                    st.warning(f"🚨 **Atenção:** Sistema Interligado! Origem: {row[c_origem]} ➔ Destino: {row[c_destino]} | Diâmetro: {diam_adu}mm")
+        c_origem = 'Município Origem'
+        c_destino = 'Município Destino'
+        dados_adu = df_adutoras[(df_adutoras[c_origem].astype(str).str.strip().str.upper() == municipio_selecionado) | 
+                                (df_adutoras[c_destino].astype(str).str.strip().str.upper() == municipio_selecionado)] if c_origem in df_adutoras.columns else pd.DataFrame()
+        if not dados_adu.empty:
+            st.header("🔗 Sistemas Interligados / Adutoras de Exportação")
+            for _, row in dados_adu.iterrows():
+                diam_adu = formatar_valor(buscar_campo(row, 'Diâmetro da Adutora (mm)') or '—')
+                st.warning(f"🚨 **Atenção:** Sistema Interligado! Origem: {row[c_origem]} ➔ Destino: {row[c_destino]} | Diâmetro: {diam_adu}mm")
 
     # 3. Seção de Poços Artesianos
     if not dados_poc.empty:
@@ -395,33 +376,30 @@ try:
         for _, row in dados_poc.iterrows():
             col_atual = cols_pocos[idx % 3]
             with col_atual:
-                id_pocio = row.get('IDENTIFICAÇÃO DO POÇO', row.get('IDENTIFICACAO DO POCO', '—'))
+                id_pocio = buscar_campo(row, 'Identificação do Poço') or '—'
                 st.markdown(f"<div class='card'><div class='card-title'>📍 {id_pocio}</div>", unsafe_allow_html=True)
                 
-                if dado_valido(row.get('LOCALIDADE/REGIÃO', row.get('LOCALIDADE/REGIAO'))): st.write(f"**Região/Localidade:** {row.get('LOCALIDADE/REGIÃO', row.get('LOCALIDADE/REGIAO'))}")
+                loc_p = buscar_campo(row, 'Localidade/Região')
+                if dado_valido(loc_p): st.write(f"**Região/Localidade:** {loc_p}")
                 
-                cc_equatorial = formatar_valor(row.get('CC EQUATORIAL'))
-                if dado_valido(cc_equatorial): st.write(f"**⚡ CC Equatorial:** {cc_equatorial}")
-                
-                pot_b = formatar_valor(row.get('POTÊNCIA DA BOMBA (CV)', row.get('POTENCIA DA BOMBA (CV)')))
-                alt_b = formatar_valor(row.get('ALTURA DA BOMBA (MCA)', row.get('ALTURA DA BOMBA (MCA)')))
-                vaz_b = formatar_valor(row.get('VAZÃO (M³/H)', row.get('VAZAO (M³/H)')))
+                pot_b = formatar_valor(buscar_campo(row, 'Potência da Bomba (cv)'))
+                alt_b = formatar_valor(buscar_campo(row, 'Altura da Bomba (mca)'))
+                vaz_b = formatar_valor(buscar_campo(row, 'Vazão (m³/h)'))
                 
                 if dado_valido(pot_b): st.write(f"**Potência da Bomba:** {pot_b} cv")
                 if dado_valido(alt_b): st.write(f"**Altura da Bomba:** {alt_b} mca")
                 if dado_valido(vaz_b): st.write(f"**Vazão Cadastrada:** {vaz_b} m³/h")
                 
-                link_curva = row.get('LINK/ARQUIVO CURVA DA BOMBA', '')
+                # LINK DA CURVA DA BOMBA
+                link_curva = buscar_campo(row, 'Link/Arquivo Curva da Bomba')
                 if dado_valido(link_curva):
                     st.link_button("📊 Ver Curva da Bomba", str(link_curva))
                 
-                foto_poc = row.get('LINK DA FOTO')
+                # FOTO DO POÇO VIA COLUNA 'Localização do Poço'
+                foto_poc = buscar_campo(row, 'Localização do Poço')
                 if dado_valido(foto_poc):
                     st.image(str(foto_poc), caption=f"Foto - {id_pocio}", use_container_width=True)
                 
-                obs_p = row.get('OBSERVAÇÕES', row.get('OBSERVACOES'))
-                if dado_valido(obs_p):
-                    st.info(f"**Obs:** {obs_p}")
                 st.markdown("</div>", unsafe_allow_html=True)
             idx += 1
 
