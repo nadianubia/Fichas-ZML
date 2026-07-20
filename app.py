@@ -51,23 +51,14 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-URL_PLANILHA = "https://docs.google.com/spreadsheets/d/1cUfZoPkVmiOivWXmRK4u3Vlp435f4_DeFzGvTFQOiNw/edit?gid=1107305555#gid=1107305555"
+# URL Base Única da Planilha Fichas-ZML
+base_url = "https://docs.google.com/spreadsheets/d/1cUfZoPkVmiOivWXmRK4u3Vlp435f4_DeFzGvTFQOiNw/gviz/tq?tqx=out:csv&sheet="
 
 LOGO_PATH = None
 for ext in ['png', 'jpg', 'jpeg']:
     if os.path.exists(f"logo.{ext}"):
         LOGO_PATH = f"logo.{ext}"
         break
-
-def converter_link_sheets(url):
-    try:
-        if "/edit" in url:
-            return url.split("/edit")[0] + "/gviz/tq?tqx=out:csv&sheet="
-        return url
-    except:
-        return url
-
-base_url = converter_link_sheets(URL_PLANILHA)
 
 def dado_valido(valor):
     if pd.isna(valor) or str(valor).strip() == "" or str(valor).strip().lower() == "nan" or str(valor).strip() == "—":
@@ -97,35 +88,47 @@ def buscar_campo_mult(row, lista_colunas):
                     return val
     return None
 
+def converter_coordenada(val):
+    if not dado_valido(val):
+        return None
+    try:
+        texto = str(val).strip().replace(',', '.')
+        import re
+        match = re.search(r'[-+]?\d*\.\d+|\d+', texto)
+        if match:
+            num = float(match.group())
+            if "S" in texto.upper() or "W" in texto.upper() or "O" in texto.upper():
+                num = -abs(num)
+            elif num > 0 and num < 40:
+                num = -num
+            return num
+    except:
+        return None
+    return None
+
 @st.cache_data(ttl=60)
 def carregar_dados():
-    try:
-        df_cap = pd.read_csv(base_url + "DADOS_CAPTACAO")
-    except:
-        df_cap = pd.DataFrame()
+    try: df_cap = pd.read_csv(base_url + "DADOS_CAPTACAO")
+    except: df_cap = pd.DataFrame()
         
-    try:
-        df_eta = pd.read_csv(base_url + "DADOS_ETA_EEAB")
-    except:
-        df_eta = pd.DataFrame()
+    try: df_eta = pd.read_csv(base_url + "DADOS_ETA_EEAB")
+    except: df_eta = pd.DataFrame()
         
-    try:
-        df_poc = pd.read_csv(base_url + "DADOS_POCOS")
-    except:
-        df_poc = pd.DataFrame()
+    try: df_poc = pd.read_csv(base_url + "DADOS_POCOS")
+    except: df_poc = pd.DataFrame()
         
-    try:
-        df_adu = pd.read_csv(base_url + "ADUTORAS_INTERLIGACAO")
-    except:
-        df_adu = pd.DataFrame()
+    try: df_adu = pd.read_csv(base_url + "ADUTORAS_INTERLIGACAO")
+    except: df_adu = pd.DataFrame()
+
+    try: df_geo = pd.read_csv(base_url + "GEOLOCALIZACAO")
+    except: df_geo = pd.DataFrame()
         
-    return df_cap, df_eta, df_poc, df_adu
+    return df_cap, df_eta, df_poc, df_adu, df_geo
 
 # --- GERADOR DE PDF ---
 def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
     pdf = FPDF()
     pdf.add_page()
-    
     mun_limpo = limpar_acentos(municipio).upper()
     
     if LOGO_PATH:
@@ -146,7 +149,6 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(5)
     
-    # 1. Captação / EEAB
     if not df_c.empty or not df_e.empty:
         pdf.set_font("Helvetica", "B", 11)
         pdf.cell(0, 7, "1. DADOS DA CAPTACAO SUPERFICIAL E ADUTORAS/EEAB", ln=True)
@@ -188,7 +190,6 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
             pdf.ln(1.5)
         pdf.ln(3)
 
-    # 2. ETA
     if not df_e.empty:
         pdf.set_font("Helvetica", "B", 11)
         pdf.cell(0, 7, "2. ESTACAO DE TRATAMENTO DE AGUA (ETA)", ln=True)
@@ -210,7 +211,6 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
             pdf.ln(1.5)
         pdf.ln(3)
 
-    # 3. Poços
     if not df_p.empty:
         pdf.set_font("Helvetica", "B", 11)
         pdf.cell(0, 7, "3. SISTEMA DE POCOS ARTESIANOS (SUBTERRANEO)", ln=True)
@@ -234,7 +234,7 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
     return pdf.output()
 
 try:
-    df_captacao, df_eta_eeab, df_pocos, df_adutoras = carregar_dados()
+    df_captacao, df_eta_eeab, df_pocos, df_adutoras, df_geolocalizacao = carregar_dados()
     
     def obter_municipios(df):
         if df.empty: return []
@@ -243,7 +243,7 @@ try:
                 return df[col].dropna().astype(str).str.strip().str.upper().unique().tolist()
         return []
 
-    todos_muns = obter_municipios(df_captacao) + obter_municipios(df_eta_eeab) + obter_municipios(df_pocos)
+    todos_muns = obter_municipios(df_captacao) + obter_municipios(df_eta_eeab) + obter_municipios(df_pocos) + obter_municipios(df_geolocalizacao)
     todos_municipios = sorted(list(set(todos_muns)))
 
     if not todos_municipios:
@@ -283,6 +283,7 @@ try:
     dados_cap = filtrar_por_municipio(df_captacao)
     dados_eta = filtrar_por_municipio(df_eta_eeab)
     dados_poc = filtrar_por_municipio(df_pocos)
+    dados_geo = filtrar_por_municipio(df_geolocalizacao)
     
     with col_btn:
         st.write("") 
@@ -303,6 +304,30 @@ try:
 
     st.write(f"Exibindo dados operacionais atuais para: **{municipio_selecionado}**")
     st.markdown("---")
+
+    # --- SEÇÃO DE MAPA / GEOLOCALIZAÇÃO ---
+    if not dados_geo.empty:
+        pontos_mapa = []
+        for _, r_g in dados_geo.iterrows():
+            lat_col = buscar_campo_mult(r_g, ['Latitude', 'LATITUDE', 'Lat'])
+            lon_col = buscar_campo_mult(r_g, ['Longitude', 'LONGITUDE', 'Long', 'Lon'])
+            
+            lat_f = converter_coordenada(lat_col)
+            lon_f = converter_coordenada(lon_col)
+            
+            if lat_f is not None and lon_f is not None:
+                nome_est = buscar_campo_mult(r_g, ['Unidade', 'UNIDADE', 'Descrição', 'Descricao', 'Estrutura', 'Nome']) or 'Unidade Operacional'
+                pontos_mapa.append({'latitude': lat_f, 'longitude': lon_f, 'Unidade': str(nome_est)})
+
+        if pontos_mapa:
+            st.header("📍 Localização das Unidades Operacionais")
+            df_mapa = pd.DataFrame(pontos_mapa)
+            st.map(df_mapa, latitude='latitude', longitude='longitude', zoom=12, use_container_width=True)
+            
+            with st.expander("📍 Ver coordenadas detalhadas deste município"):
+                for p in pontos_mapa:
+                    st.write(f"• **{p['Unidade']}**: `Lat: {p['latitude']}, Lon: {p['longitude']}` — [Ver no Google Maps](https://www.google.com/maps/search/?api=1&query={p['latitude']},{p['longitude']})")
+            st.markdown("---")
 
     cc_eeab_da_eta = None
     if not dados_eta.empty:
@@ -334,7 +359,6 @@ try:
                     vaz_cap = formatar_valor(buscar_campo_mult(row, ['EEAB - Vazão Principal (m³/h)', 'EEAB - Vazão Principal (m3/h)', 'Vazão Principal', 'Vazão']))
                     if dado_valido(vaz_cap): st.write(f"**Vazão Principal:** {vaz_cap} m³/h")
 
-                    # Bomba Principal
                     bomba_cap = buscar_campo_mult(row, ['EEAB - Tipo da Bomba Principal', 'Tipo da Bomba Principal', 'EEAB - Tipo Bomba Principal'])
                     pot_cap = formatar_valor(buscar_campo_mult(row, ['EEAB - Potência Principal (cv)', 'EEAB - Potencia Principal (cv)', 'Potência Principal']))
                     alt_cap = formatar_valor(buscar_campo_mult(row, ['EEAB - Altura Manométrica Principal (mca)', 'EEAB - Altura Manometrica Principal (mca)']))
@@ -346,7 +370,6 @@ try:
                         if dado_valido(alt_cap): txt_b += f" | Altura: {alt_cap} mca"
                         st.write(txt_b)
 
-                    # Bomba Reserva (Varrendo todas as combinações de nomes de colunas)
                     possui_reserva = buscar_campo_mult(row, ['EEAB - Possui Bomba Reserva', 'EAB - Possui Bomba Reserva', 'Possui Bomba Reserva', 'Bomba Reserva'])
                     tipo_reserva = buscar_campo_mult(row, ['EEAB - Tipo da Bomba Reserva', 'EAB - Tipo da Bomba Reserva', 'Tipo da Bomba Reserva', 'EEAB - Tipo Bomba Reserva'])
                     pot_reserva = formatar_valor(buscar_campo_mult(row, ['EEAB - Potência Reserva (cv)', 'EEAB - Potencia Reserva (cv)', 'EAB - Potência Reserva (cv)', 'EAB - Potencia Reserva (cv)', 'Potência Reserva']))
@@ -361,7 +384,6 @@ try:
                         if dado_valido(alt_reserva): txt_res += f" | Altura: {alt_reserva} mca"
                         st.write(txt_res)
 
-                    # Crivo
                     crivo = buscar_campo_mult(row, ['Captação - Possui Crivo', 'Possui Crivo'])
                     mat_crivo = buscar_campo_mult(row, ['Captação - Material Crivo', 'Material Crivo'])
                     diam_crivo = formatar_valor(buscar_campo_mult(row, ['Captação - Diâmetro Crivo (mm)', 'Captação - Diametro Crivo (mm)']))
@@ -371,7 +393,6 @@ try:
                         if dado_valido(mat_crivo): txt_c += f" - {mat_crivo}"
                         st.write(txt_c)
 
-                    # Adutoras EEAB até ETA
                     diam = formatar_valor(buscar_campo_mult(row, ['Adutora EEAB até ETA - Diâmetro (mm)', 'Adutora EEAB ate ETA - Diametro (mm)']))
                     comp = formatar_valor(buscar_campo_mult(row, ['Adutora EEAB até ETA - Comprimento (m)', 'Adutora EEAB ate ETA - Comprimento (m)']))
                     mat_adu = buscar_campo_mult(row, ['Adutora EEAB até ETA - Material', 'Adutora EEAB ate ETA - Material'])
@@ -405,7 +426,6 @@ try:
                     mat_est = buscar_campo_mult(row, ['ETA - Material Estrutura'])
                     if dado_valido(mat_est): st.write(f"**Material da Estrutura:** {mat_est}")
 
-                    # Filtros
                     f_qtd = formatar_valor(buscar_campo_mult(row, ['Filtros - Quantidade']))
                     f_alt = formatar_valor(buscar_campo_mult(row, ['Filtros - Altura (m)']))
                     f_vol = formatar_valor(buscar_campo_mult(row, ['Filtros - Volume (m³)', 'Filtros - Volume (m3)']))
@@ -416,7 +436,6 @@ try:
                         if dado_valido(f_vol): txt_f += f" | Volume Total: {f_vol} m³"
                         st.write(txt_f)
 
-                    # Decantador
                     d_alt = formatar_valor(buscar_campo_mult(row, ['Decantador - Altura (m)']))
                     d_vol = formatar_valor(buscar_campo_mult(row, ['Decantador - Volume (m³)', 'Decantador - Volume (m3)']))
                     if dado_valido(d_alt) or dado_valido(d_vol):
@@ -425,7 +444,6 @@ try:
                         if dado_valido(d_vol): txt_d += f" | Volume: {d_vol} m³"
                         st.write(txt_d)
 
-                    # Reservatório de Lavagem
                     rl_alt = formatar_valor(buscar_campo_mult(row, ['Reservatório Lavagem - Altura (m)', 'Reservatorio Lavagem - Altura (m)']))
                     rl_vol = formatar_valor(buscar_campo_mult(row, ['Reservatório Lavagem - Volume (m³)', 'Reservatorio Lavagem - Volume (m3)']))
                     if dado_valido(rl_alt) or dado_valido(rl_vol):
@@ -434,7 +452,6 @@ try:
                         if dado_valido(rl_vol): txt_rl += f" | Volume: {rl_vol} m³"
                         st.write(txt_rl)
 
-                    # Câmara de Carga
                     cc_alt = formatar_valor(buscar_campo_mult(row, ['Câmara de Carga - Altura (m)', 'Camara de Carga - Altura (m)']))
                     cc_vol = formatar_valor(buscar_campo_mult(row, ['Câmara de Carga - Volume (m³)', 'Camara de Carga - Volume (m3)']))
                     if dado_valido(cc_alt) or dado_valido(cc_vol):
@@ -443,7 +460,6 @@ try:
                         if dado_valido(cc_vol): txt_cc += f" | Volume: {cc_vol} m³"
                         st.write(txt_cc)
 
-                    # Químicos e Operação
                     pre_clor = buscar_campo_mult(row, ['Possui Pré-cloração', 'Possui Pre-cloracao'])
                     if dado_valido(pre_clor): st.write(f"**Possui Pré-cloração:** {pre_clor}")
 
