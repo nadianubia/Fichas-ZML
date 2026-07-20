@@ -10,7 +10,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# Estilização CSS para corrigir margens, cores institucionais e criar os Cards visuais
+# Estilização CSS
 st.markdown("""
     <style>
     .block-container { padding-top: 4rem; }
@@ -47,7 +47,8 @@ st.markdown("""
         margin-bottom: 20px;
         box-shadow: 2px 2px 5px rgba(0,0,0,0.05);
     }
-    .card-title { color: #1F4E79; font-weight: bold; margin-bottom: 10px; font-size: 1.1rem; }
+    .card-title { color: #1F4E79; font-weight: bold; margin-bottom: 12px; font-size: 1.15rem; }
+    .sub-section { color: #006699; font-weight: bold; margin-top: 10px; margin-bottom: 5px; border-bottom: 1px solid #e0e0e0; padding-bottom: 3px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -146,10 +147,19 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(5)
     
-    if not df_c.empty:
+    # 1. Captação / EEAB
+    if not df_c.empty or not df_e.empty:
         pdf.set_font("Helvetica", "B", 11)
         pdf.cell(0, 7, "1. DADOS DA CAPTACAO SUPERFICIAL E ADUTORAS/EEAB", ln=True)
         pdf.set_font("Helvetica", "", 10)
+        
+        # Pega CC Equatorial EEAB da aba ETA se existir
+        cc_eeab_val = ""
+        if not df_e.empty:
+            for _, r_e in df_e.iterrows():
+                cc_eeab_val = formatar_valor(buscar_campo_mult(r_e, ['CC Equatorial EEAB', 'CC EEAB']))
+                if cc_eeab_val: break
+
         for _, row in df_c.iterrows():
             loc = buscar_campo_mult(row, ['Localidade'])
             tipo = buscar_campo_mult(row, ['Captação - Tipo', 'Tipo de Captação'])
@@ -157,13 +167,20 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
             pot = formatar_valor(buscar_campo_mult(row, ['EEAB - Potência Principal (cv)']))
             alt = formatar_valor(buscar_campo_mult(row, ['EEAB - Altura Manométrica Principal (mca)']))
             
+            bomba_res = buscar_campo_mult(row, ['EAB - Possui Bomba Reserva', 'Possui Bomba Reserva'])
+            pot_res = formatar_valor(buscar_campo_mult(row, ['EAB - Potência Reserva (cv)']))
+            vaz_res = formatar_valor(buscar_campo_mult(row, ['EAB - Vazão Reserva (m³/h)']))
+            
             if dado_valido(loc): pdf.cell(0, 5.5, f"Localidade/Sistema: {limpar_acentos(loc)}", ln=True)
+            if dado_valido(cc_eeab_val): pdf.cell(0, 5.5, f"CC Equatorial EEAB: {cc_eeab_val}", ln=True)
             if dado_valido(tipo): pdf.cell(0, 5.5, f"Tipo de Captacao: {limpar_acentos(tipo)}", ln=True)
-            if dado_valido(vaz): pdf.cell(0, 5.5, f"Vazao EEAB: {vaz} m3/h", ln=True)
-            if dado_valido(pot) or dado_valido(alt): pdf.cell(0, 5.5, f"Potencia / Altura: {pot} cv | {alt} mca", ln=True)
+            if dado_valido(vaz): pdf.cell(0, 5.5, f"Vazao Principal EEAB: {vaz} m3/h", ln=True)
+            if dado_valido(pot) or dado_valido(alt): pdf.cell(0, 5.5, f"Potencia / Altura (Principal): {pot} cv | {alt} mca", ln=True)
+            if dado_valido(bomba_res): pdf.cell(0, 5.5, f"Bomba Reserva: {bomba_res} (Potencia: {pot_res} cv | Vazao: {vaz_res} m3/h)", ln=True)
             pdf.ln(1.5)
         pdf.ln(3)
 
+    # 2. ETA
     if not df_e.empty:
         pdf.set_font("Helvetica", "B", 11)
         pdf.cell(0, 7, "2. ESTACAO DE TRATAMENTO DE AGUA (ETA)", ln=True)
@@ -171,16 +188,21 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
         for _, row in df_e.iterrows():
             loc_eta = buscar_campo_mult(row, ['Localidade'])
             cc_eta = formatar_valor(buscar_campo_mult(row, ['CC Equatorial ETA']))
-            cc_eeab = formatar_valor(buscar_campo_mult(row, ['CC Equatorial EEAB']))
+            eta_tipo = buscar_campo_mult(row, ['ETA - Tipo'])
+            filtros_qtd = formatar_valor(buscar_campo_mult(row, ['Filtros - Quantidade']))
+            prod_chem = buscar_campo_mult(row, ['Produto Químico Principal'])
             obs_eta = buscar_campo_mult(row, ['OBSERVAÇÕES', 'Observações'])
             
             if dado_valido(loc_eta): pdf.cell(0, 5.5, f"Localidade da ETA: {limpar_acentos(loc_eta)}", ln=True)
-            if dado_valido(cc_eeab): pdf.cell(0, 5.5, f"CC Equatorial EEAB: {cc_eeab}", ln=True)
             if dado_valido(cc_eta): pdf.cell(0, 5.5, f"CC Equatorial ETA: {cc_eta}", ln=True)
+            if dado_valido(eta_tipo): pdf.cell(0, 5.5, f"Tipo da ETA: {limpar_acentos(eta_tipo)}", ln=True)
+            if dado_valido(filtros_qtd): pdf.cell(0, 5.5, f"Filtros: {filtros_qtd} unidade(s)", ln=True)
+            if dado_valido(prod_chem): pdf.cell(0, 5.5, f"Produtos Quimicos: {limpar_acentos(prod_chem)}", ln=True)
             if dado_valido(obs_eta): pdf.multi_cell(0, 5.5, f"Obs: {limpar_acentos(obs_eta)}")
             pdf.ln(1.5)
         pdf.ln(3)
 
+    # 3. Poços
     if not df_p.empty:
         pdf.set_font("Helvetica", "B", 11)
         pdf.cell(0, 7, "3. SISTEMA DE POCOS ARTESIANOS (SUBTERRANEO)", ln=True)
@@ -274,35 +296,66 @@ try:
     st.write(f"Exibindo dados operacionais atuais para: **{municipio_selecionado}**")
     st.markdown("---")
 
+    # Extrai o CC Equatorial EEAB da aba ETA (se existir) para exibir no card de Captação/EEAB
+    cc_eeab_da_eta = None
+    if not dados_eta.empty:
+        for _, r_e in dados_eta.iterrows():
+            val = formatar_valor(buscar_campo_mult(r_e, ['CC Equatorial EEAB', 'CC EEAB']))
+            if val:
+                cc_eeab_da_eta = val
+                break
+
     # --- EXIBIÇÃO NA TELA ---
     if not dados_cap.empty or not dados_eta.empty:
         st.header("🏢 Infraestrutura de Tratamento e Distribuição Superficial")
         col_cap, col_eta = st.columns(2)
         
+        # --- CARD CAPTAÇÃO E EEAB ---
         with col_cap:
             if not dados_cap.empty:
                 st.markdown("<div class='card'><div class='card-title'>🪵 DADOS DA CAPTAÇÃO E ADUTORAS/EEAB</div>", unsafe_allow_html=True)
                 for _, row in dados_cap.iterrows():
                     loc_c = buscar_campo_mult(row, ['Localidade'])
                     if dado_valido(loc_c): st.write(f"**Localidade/Sistema:** {loc_c}")
+
+                    # CC EEAB movido para cá!
+                    if dado_valido(cc_eeab_da_eta):
+                        st.write(f"**⚡ CC Equatorial EEAB:** {cc_eeab_da_eta}")
                     
                     tipo_cap = buscar_campo_mult(row, ['Captação - Tipo', 'Tipo de Captação'])
                     if dado_valido(tipo_cap): st.write(f"**Tipo de Captação:** {tipo_cap}")
 
-                    vaz_cap = formatar_valor(buscar_campo_mult(row, ['EEAB - Vazão Principal (m³/h)', 'Vazão', 'Vazão da Captação']))
-                    if dado_valido(vaz_cap): st.write(f"**Vazão:** {vaz_cap} m³/h")
+                    vaz_cap = formatar_valor(buscar_campo_mult(row, ['EEAB - Vazão Principal (m³/h)', 'Vazão Principal', 'Vazão']))
+                    if dado_valido(vaz_cap): st.write(f"**Vazão Principal:** {vaz_cap} m³/h")
 
-                    bomba_cap = buscar_campo_mult(row, ['EEAB - Tipo da Bomba Principal', 'Tipo da Bomba'])
-                    pot_cap = formatar_valor(buscar_campo_mult(row, ['EEAB - Potência Principal (cv)', 'Potência (cv)']))
-                    if dado_valido(bomba_cap) or dado_valido(pot_cap):
-                        txt_b = "**Bomba Elevatória (EEAB):**"
+                    # Bomba Principal
+                    bomba_cap = buscar_campo_mult(row, ['EEAB - Tipo da Bomba Principal', 'Tipo da Bomba Principal'])
+                    pot_cap = formatar_valor(buscar_campo_mult(row, ['EEAB - Potência Principal (cv)', 'Potência Principal']))
+                    alt_cap = formatar_valor(buscar_campo_mult(row, ['EEAB - Altura Manométrica Principal (mca)', 'Altura Manométrica Principal']))
+                    
+                    if dado_valido(bomba_cap) or dado_valido(pot_cap) or dado_valido(alt_cap):
+                        txt_b = "**Bomba Principal (EEAB):**"
                         if dado_valido(bomba_cap): txt_b += f" {bomba_cap}"
                         if dado_valido(pot_cap): txt_b += f" | Potência: {pot_cap} cv"
+                        if dado_valido(alt_cap): txt_b += f" | Altura: {alt_cap} mca"
                         st.write(txt_b)
 
-                    alt_cap = formatar_valor(buscar_campo_mult(row, ['EEAB - Altura Manométrica Principal (mca)', 'Altura (mca)']))
-                    if dado_valido(alt_cap): st.write(f"**Altura Manométrica:** {alt_cap} mca")
-                    
+                    # Bomba Reserva
+                    possui_reserva = buscar_campo_mult(row, ['EAB - Possui Bomba Reserva', 'Possui Bomba Reserva', 'EEAB - Possui Bomba Reserva'])
+                    tipo_reserva = buscar_campo_mult(row, ['EAB - Tipo da Bomba Reserva', 'Tipo da Bomba Reserva'])
+                    pot_reserva = formatar_valor(buscar_campo_mult(row, ['EAB - Potência Reserva (cv)', 'Potência Reserva']))
+                    vaz_reserva = formatar_valor(buscar_campo_mult(row, ['EAB - Vazão Reserva (m³/h)', 'Vazão Reserva']))
+                    alt_reserva = formatar_valor(buscar_campo_mult(row, ['EAB - Altura Manométrica Reserva (mca)', 'Altura Manométrica Reserva']))
+
+                    if dado_valido(possui_reserva):
+                        txt_res = f"**Bomba Reserva:** {possui_reserva}"
+                        if dado_valido(tipo_reserva): txt_res += f" ({tipo_reserva})"
+                        if dado_valido(pot_reserva): txt_res += f" | Potência: {pot_reserva} cv"
+                        if dado_valido(vaz_reserva): txt_res += f" | Vazão: {vaz_reserva} m³/h"
+                        if dado_valido(alt_reserva): txt_res += f" | Altura: {alt_reserva} mca"
+                        st.write(txt_res)
+
+                    # Crivo e Drenagem
                     crivo = buscar_campo_mult(row, ['Captação - Possui Crivo'])
                     mat_crivo = buscar_campo_mult(row, ['Captação - Material Crivo'])
                     diam_crivo = formatar_valor(buscar_campo_mult(row, ['Captação - Diâmetro Crivo (mm)']))
@@ -311,10 +364,11 @@ try:
                         if dado_valido(diam_crivo): txt_c += f" ({diam_crivo} mm)"
                         if dado_valido(mat_crivo): txt_c += f" - {mat_crivo}"
                         st.write(txt_c)
-                    
-                    diam = formatar_valor(buscar_campo_mult(row, ['Adutora EEAB até ETA - Diâmetro (mm)', 'Adutora AB até EEAB - Diâmetro (mm)']))
-                    comp = formatar_valor(buscar_campo_mult(row, ['Adutora EEAB até ETA - Comprimento (m)', 'Adutora AB até EEAB - Comprimento (m)']))
-                    mat_adu = buscar_campo_mult(row, ['Adutora EEAB até ETA - Material', 'Adutora AB até EEAB - Material'])
+
+                    # Adutoras EEAB até ETA
+                    diam = formatar_valor(buscar_campo_mult(row, ['Adutora EEAB até ETA - Diâmetro (mm)', 'adutora EEAB até ETA - Diâmetro (mm)']))
+                    comp = formatar_valor(buscar_campo_mult(row, ['Adutora EEAB até ETA - Comprimento (m)', 'adutora EEAB até ETA - Comprimento (m)']))
+                    mat_adu = buscar_campo_mult(row, ['Adutora EEAB até ETA - Material', 'adutora EEAB até ETA - Material'])
                     if dado_valido(diam) or dado_valido(comp):
                         txt_adu = "**Adutora EEAB ➔ ETA:**"
                         if dado_valido(diam): txt_adu += f" Diâmetro {diam} mm"
@@ -328,16 +382,15 @@ try:
                     st.markdown("---")
                 st.markdown("</div>", unsafe_allow_html=True)
 
+        # --- CARD ESTAÇÃO DE TRATAMENTO DE ÁGUA (ETA) ---
         with col_eta:
             if not dados_eta.empty:
                 st.markdown("<div class='card'><div class='card-title'>⚡ ESTAÇÃO DE TRATAMENTO DE ÁGUA (ETA)</div>", unsafe_allow_html=True)
                 for _, row in dados_eta.iterrows():
                     loc_e = buscar_campo_mult(row, ['Localidade'])
                     if dado_valido(loc_e): st.write(f"**Localidade da ETA:** {loc_e}")
-                    
-                    cc_eeab = formatar_valor(buscar_campo_mult(row, ['CC Equatorial EEAB', 'CC EEAB']))
-                    if dado_valido(cc_eeab): st.write(f"**⚡ CC Equatorial EEAB:** {cc_eeab}")
 
+                    # Apenas CC ETA fica aqui
                     cc_eta = formatar_valor(buscar_campo_mult(row, ['CC Equatorial ETA', 'CC ETA']))
                     if dado_valido(cc_eta): st.write(f"**⚡ CC Equatorial ETA:** {cc_eta}")
                     
@@ -346,7 +399,53 @@ try:
 
                     mat_est = buscar_campo_mult(row, ['ETA - Material Estrutura'])
                     if dado_valido(mat_est): st.write(f"**Material da Estrutura:** {mat_est}")
-                    
+
+                    # --- DETALHAMENTO TÉCNICO DA ETA ---
+                    # Filtros
+                    f_qtd = formatar_valor(buscar_campo_mult(row, ['Filtros - Quantidade']))
+                    f_alt = formatar_valor(buscar_campo_mult(row, ['Filtros - Altura (m)']))
+                    f_vol = formatar_valor(buscar_campo_mult(row, ['Filtros - Volume (m³)']))
+                    if dado_valido(f_qtd) or dado_valido(f_vol):
+                        txt_f = "**Filtros:**"
+                        if dado_valido(f_qtd): txt_f += f" {f_qtd} unidade(s)"
+                        if dado_valido(f_alt): txt_f += f" | Altura: {f_alt} m"
+                        if dado_valido(f_vol): txt_f += f" | Volume Total: {f_vol} m³"
+                        st.write(txt_f)
+
+                    # Decantador
+                    d_alt = formatar_valor(buscar_campo_mult(row, ['Decantador - Altura (m)']))
+                    d_vol = formatar_valor(buscar_campo_mult(row, ['Decantador - Volume (m³)']))
+                    if dado_valido(d_alt) or dado_valido(d_vol):
+                        txt_d = "**Decantador:**"
+                        if dado_valido(d_alt): txt_d += f" Altura: {d_alt} m"
+                        if dado_valido(d_vol): txt_d += f" | Volume: {d_vol} m³"
+                        st.write(txt_d)
+
+                    # Reservatório de Lavagem
+                    rl_alt = formatar_valor(buscar_campo_mult(row, ['Reservatório Lavagem - Altura (m)']))
+                    rl_vol = formatar_valor(buscar_campo_mult(row, ['Reservatório Lavagem - Volume (m³)']))
+                    if dado_valido(rl_alt) or dado_valido(rl_vol):
+                        txt_rl = "**Reservatório de Lavagem:**"
+                        if dado_valido(rl_alt): txt_rl += f" Altura: {rl_alt} m"
+                        if dado_valido(rl_vol): txt_rl += f" | Volume: {rl_vol} m³"
+                        st.write(txt_rl)
+
+                    # Câmara de Carga
+                    cc_alt = formatar_valor(buscar_campo_mult(row, ['Câmara de Carga - Altura (m)']))
+                    cc_vol = formatar_valor(buscar_campo_mult(row, ['Câmara de Carga - Volume (m³)']))
+                    if dado_valido(cc_alt) or dado_valido(cc_vol):
+                        txt_cc = "**Câmara de Carga:**"
+                        if dado_valido(cc_alt): txt_cc += f" Altura: {cc_alt} m"
+                        if dado_valido(cc_vol): txt_cc += f" | Volume: {cc_vol} m³"
+                        st.write(txt_cc)
+
+                    # Químicos e Operação
+                    pre_clor = buscar_campo_mult(row, ['Possui Pré-cloração'])
+                    if dado_valido(pre_clor): st.write(f"**Possui Pré-cloração:** {pre_clor}")
+
+                    prod_chem = buscar_campo_mult(row, ['Produto Químico Principal'])
+                    if dado_valido(prod_chem): st.write(f"**Produtos Químicos:** {prod_chem}")
+
                     obs_e = buscar_campo_mult(row, ['OBSERVAÇÕES', 'Observações', 'Obs'])
                     if dado_valido(obs_e): st.info(f"**Obs:** {obs_e}")
 
