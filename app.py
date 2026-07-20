@@ -3,6 +3,9 @@ import pandas as pd
 from fpdf import FPDF
 import os
 import re
+import requests
+from io import BytesIO
+from PIL import Image
 
 # Configuração da página para modo amplo (wide)
 st.set_page_config(
@@ -125,6 +128,22 @@ def extrair_lista_fotos(row, tipo_aba):
 
     return fotos
 
+def baixar_imagem_para_pdf(url):
+    """Baixa a imagem da URL e converte para BytesIO compatível com FPDF"""
+    try:
+        response = requests.get(url, timeout=5)
+        if response.status_code == 200:
+            img = Image.open(BytesIO(response.content))
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            img_byte_arr = BytesIO()
+            img.save(img_byte_arr, format='JPEG')
+            img_byte_arr.seek(0)
+            return img_byte_arr
+    except Exception:
+        pass
+    return None
+
 def exibir_galeria_fotos(fotos, legenda_base="Foto"):
     """Exibe fotos em colunas lado a lado no card"""
     if not fotos:
@@ -174,7 +193,7 @@ def carregar_dados():
         
     return df_cap, df_eta, df_poc, df_adu, df_geo
 
-# --- GERADOR DE PDF ---
+# --- GERADOR DE PDF COM FOTOS ---
 def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
     pdf = FPDF()
     pdf.add_page()
@@ -198,6 +217,7 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(5)
     
+    # --- CAPTAÇÃO E EEAB ---
     if not df_c.empty or not df_e.empty:
         pdf.set_font("Helvetica", "B", 11)
         pdf.cell(0, 7, "1. DADOS DA CAPTACAO SUPERFICIAL E ADUTORAS/EEAB", ln=True)
@@ -235,10 +255,30 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
                 if dado_valido(vaz_res): txt_r += f" | Vazao: {vaz_res} m3/h"
                 if dado_valido(alt_res): txt_r += f" | Altura: {alt_res} mca"
                 pdf.cell(0, 5.5, txt_r, ln=True)
+
+            # Inserir Fotos Captação no PDF
+            fotos_cap = extrair_lista_fotos(row, "cap")
+            if fotos_cap:
+                pdf.ln(2)
+                x_start = pdf.get_x()
+                y_pos = pdf.get_y()
+                if y_pos > 220:
+                    pdf.add_page()
+                    y_pos = pdf.get_y()
                 
-            pdf.ln(1.5)
+                offset_x = 0
+                for idx_f, url_f in enumerate(fotos_cap[:3]): # limita em até 3 fotos por linha
+                    img_bytes = baixar_imagem_para_pdf(url_f)
+                    if img_bytes:
+                        pdf.image(img_bytes, x=x_start + offset_x, y=y_pos, w=50, h=35)
+                        offset_x += 55
+                if offset_x > 0:
+                    pdf.set_y(y_pos + 38)
+                
+            pdf.ln(2)
         pdf.ln(3)
 
+    # --- ETA ---
     if not df_e.empty:
         pdf.set_font("Helvetica", "B", 11)
         pdf.cell(0, 7, "2. ESTACAO DE TRATAMENTO DE AGUA (ETA)", ln=True)
@@ -257,15 +297,39 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
             if dado_valido(filtros_qtd): pdf.cell(0, 5.5, f"Filtros: {filtros_qtd} unidade(s)", ln=True)
             if dado_valido(prod_chem): pdf.cell(0, 5.5, f"Produtos Quimicos: {limpar_acentos(prod_chem)}", ln=True)
             if dado_valido(obs_eta): pdf.multi_cell(0, 5.5, f"Obs: {limpar_acentos(obs_eta)}")
-            pdf.ln(1.5)
+
+            # Inserir Fotos ETA no PDF
+            fotos_eta = extrair_lista_fotos(row, "eta")
+            if fotos_eta:
+                pdf.ln(2)
+                x_start = pdf.get_x()
+                y_pos = pdf.get_y()
+                if y_pos > 220:
+                    pdf.add_page()
+                    y_pos = pdf.get_y()
+                
+                offset_x = 0
+                for idx_f, url_f in enumerate(fotos_eta[:3]):
+                    img_bytes = baixar_imagem_para_pdf(url_f)
+                    if img_bytes:
+                        pdf.image(img_bytes, x=x_start + offset_x, y=y_pos, w=50, h=35)
+                        offset_x += 55
+                if offset_x > 0:
+                    pdf.set_y(y_pos + 38)
+
+            pdf.ln(2)
         pdf.ln(3)
 
+    # --- POÇOS ---
     if not df_p.empty:
         pdf.set_font("Helvetica", "B", 11)
         pdf.cell(0, 7, "3. SISTEMA DE POCOS ARTESIANOS (SUBTERRANEO)", ln=True)
         for _, row in df_p.iterrows():
+            if pdf.get_y() > 230:
+                pdf.add_page()
+
             id_p = buscar_campo_mult(row, ['Identificação do Poço']) or 'Poco'
-            cc_p = formatar_valor(buscar_campo_mult(row, ['CC Equatorial', 'CC Equatorial Poço', 'CC Poço', 'CC', 'Código do Cliente']))
+            cc_p = formatar_valor(buscar_campo_mult(row, ['CC Equatorial', 'CC Equatorial Poço', 'CC Poço', 'CC', 'Código do Cliente', 'CC Equatorial (Poço)']))
             pdf.set_font("Helvetica", "B", 10)
             txt_head_p = f"Poco: {limpar_acentos(id_p)}"
             if dado_valido(cc_p): txt_head_p += f" (CC: {cc_p})"
@@ -281,7 +345,27 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
             if dado_valido(alt_b): detalhes.append(f"Altura: {alt_b} mca")
             if dado_valido(vaz_b): detalhes.append(f"Vazao: {vaz_b} m3/h")
             if detalhes: pdf.cell(0, 5, "  " + " | ".join(detalhes), ln=True)
-            pdf.ln(1)
+
+            # Inserir Fotos do Poço no PDF
+            fotos_poc = extrair_lista_fotos(row, "poc")
+            if fotos_poc:
+                pdf.ln(2)
+                x_start = pdf.get_x()
+                y_pos = pdf.get_y()
+                if y_pos > 220:
+                    pdf.add_page()
+                    y_pos = pdf.get_y()
+                
+                offset_x = 0
+                for idx_f, url_f in enumerate(fotos_poc[:3]):
+                    img_bytes = baixar_imagem_para_pdf(url_f)
+                    if img_bytes:
+                        pdf.image(img_bytes, x=x_start + offset_x, y=y_pos, w=50, h=35)
+                        offset_x += 55
+                if offset_x > 0:
+                    pdf.set_y(y_pos + 38)
+
+            pdf.ln(2)
             
     return pdf.output()
 
@@ -352,7 +436,7 @@ try:
                 use_container_width=True
             )
         except Exception as pdf_err:
-            st.error("Erro ao gerar PDF")
+            st.error(f"Erro ao gerar PDF: {pdf_err}")
 
     st.write(f"Exibindo dados operacionais atuais para: **{municipio_selecionado}**")
     st.markdown("---")
@@ -434,7 +518,7 @@ try:
                     obs_c = buscar_campo_mult(row, ['OBSERVAÇÕES', 'Observações', 'Obs'])
                     if dado_valido(obs_c): st.info(f"**Obs:** {obs_c}")
 
-                    # --- GALERIA DE FOTOS CAPTAÇÃO ---
+                    # Galeria Fotos Captação
                     fotos_cap = extrair_lista_fotos(row, "cap")
                     exibir_galeria_fotos(fotos_cap, legenda_base="Captação/EEAB")
 
@@ -501,7 +585,7 @@ try:
                     obs_e = buscar_campo_mult(row, ['OBSERVAÇÕES', 'Observações', 'Obs'])
                     if dado_valido(obs_e): st.info(f"**Obs:** {obs_e}")
 
-                    # --- GALERIA DE FOTOS ETA ---
+                    # Galeria Fotos ETA
                     fotos_eta = extrair_lista_fotos(row, "eta")
                     exibir_galeria_fotos(fotos_eta, legenda_base="ETA")
 
@@ -535,7 +619,6 @@ try:
                 loc_p = buscar_campo_mult(row, ['Localidade/Região', 'Localidade'])
                 if dado_valido(loc_p): st.write(f"**Região/Localidade:** {loc_p}")
 
-                # --- EXIBIÇÃO DA CC EQUATORIAL DO POÇO ---
                 cc_poco = formatar_valor(buscar_campo_mult(row, ['CC Equatorial', 'CC Equatorial Poço', 'CC Poço', 'CC', 'Código do Cliente', 'CC Equatorial (Poço)']))
                 if dado_valido(cc_poco): st.write(f"**⚡ CC Equatorial:** {cc_poco}")
                 
@@ -547,7 +630,7 @@ try:
                 if dado_valido(alt_b): st.write(f"**Altura da Bomba:** {alt_b} mca")
                 if dado_valido(vaz_b): st.write(f"**Vazão Cadastrada:** {vaz_b} m³/h")
 
-                # --- GALERIA DE FOTOS POÇO ---
+                # Galeria Fotos Poço
                 fotos_poc = extrair_lista_fotos(row, "poc")
                 exibir_galeria_fotos(fotos_poc, legenda_base="Poço")
                 
@@ -570,7 +653,6 @@ try:
             if lat_f is not None and lon_f is not None:
                 nome_est = buscar_campo_mult(r_g, ['Unidade', 'UNIDADE', 'Descrição', 'Descricao', 'Estrutura', 'Nome']) or 'Unidade Operacional'
                 
-                # Link direto para Google Maps
                 link_gmaps = f"https://www.google.com/maps/search/?api=1&query={lat_f},{lon_f}"
                 
                 pontos_mapa.append({
@@ -586,7 +668,6 @@ try:
             
             df_mapa = pd.DataFrame(pontos_mapa)
 
-            # Dividindo a tela de forma proporcional
             col_mapa, col_lista = st.columns([1.2, 1])
             
             with col_mapa:
