@@ -115,7 +115,7 @@ def carregar_dados():
         
     return df_cap, df_eta, df_poc, df_adu
 
-# --- FUNÇÃO PARA GERAR O PDF DINÂMICO (CORRIGIDA) ---
+# --- FUNÇÃO PARA GERAR O PDF DINÂMICO ---
 def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
     pdf = FPDF()
     pdf.add_page()
@@ -167,7 +167,6 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
             if dado_valido(bomba) or dado_valido(pot): 
                 pdf.cell(0, 5.5, f"Bomba Elevatoria (EEAB): {limpar_acentos(bomba)} | Potencia: {pot} cv", ln=True)
             
-            # Quebra automática para observações longas
             if dado_valido(obs_cap): 
                 pdf.multi_cell(0, 5.5, f"Obs: {limpar_acentos(obs_cap)}")
             pdf.ln(1.5)
@@ -187,7 +186,6 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
             if dado_valido(cc_eta_aux): pdf.cell(0, 5.5, f"CC Equatorial ETA: {cc_eta_aux}", ln=True)
             if dado_valido(vaz_chg): pdf.cell(0, 5.5, f"Vazao de Chegada na ETA: {vaz_chg} m3/h", ln=True)
             
-            # Quebra automática para observações longas
             if dado_valido(obs_eta): 
                 pdf.multi_cell(0, 5.5, f"Obs: {limpar_acentos(obs_eta)}")
             pdf.ln(1.5)
@@ -215,7 +213,6 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
             if detalhes:
                 pdf.cell(0, 5, "  " + " | ".join(detalhes), ln=True)
                 
-            # Quebra automática para observações longas
             if dado_valido(obs_poc):
                 pdf.set_x(10)
                 pdf.multi_cell(0, 5, f"  Obs: {limpar_acentos(obs_poc)}")
@@ -382,7 +379,7 @@ try:
         c_destino = 'MUNICÍPIO DESTINO' if 'MUNICÍPIO DESTINO' in df_adutoras.columns else 'MUNICIPIO DESTINO'
         if c_origem in df_adutoras.columns and c_destino in df_adutoras.columns:
             dados_adu = df_adutoras[(df_adutoras[c_origem].astype(str).str.strip().str.upper() == municipio_selecionado) | 
-                                   (df_adutoras[c_destino].astype(str).str.strip().str.upper() == municipio_selecionado)]
+                                    (df_adutoras[c_destino].astype(str).str.strip().str.upper() == municipio_selecionado)]
             if not dados_adu.empty:
                 st.header("🔗 Sistemas Interligados / Adutoras de Exportação")
                 for _, row in dados_adu.iterrows():
