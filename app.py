@@ -298,7 +298,7 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
             pdf.ln(2)
         pdf.ln(3)
 
-    # 2. ETA
+    # 2. ETA (PDF ATUALIZADO COM BOMBA DE VÁCUO DE CLORO)
     if not df_e.empty:
         pdf.set_font("Helvetica", "B", 11)
         pdf.cell(0, 7, "2. ESTACAO DE TRATAMENTO DE AGUA (ETA)", ln=True)
@@ -330,6 +330,12 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
             b2_alt = formatar_valor(buscar_campo_mult(row, ['Bomba de lavagem 02 - Altura Manométrica 02 (mca)', 'Bomba de lavagem 02 - Altura Manometrica 02 (mca)']))
             b2_pot = formatar_valor(buscar_campo_mult(row, ['Bomba de lavagem 02 - Potência 02 (cv)', 'Bomba de lavagem 02 - Potencia 02 (cv)']))
             b2_vaz = formatar_valor(buscar_campo_mult(row, ['Bomba de lavagem 02 - Vazão 02 (m³/h)', 'Bomba de lavagem 02 - Vazao 02 (m3/h)']))
+
+            # Bomba de Vácuo de Cloro
+            vac_tipo = buscar_campo_mult(row, ['Bomba de Vácuo de Cloro - Tipo', 'Bomba de Vacuo de Cloro - Tipo'])
+            vac_alt = formatar_valor(buscar_campo_mult(row, ['Bomba de Vácuo de Cloro - Altura Manométrica (mca)', 'Bomba de Vacuo de Cloro - Altura Manometrica (mca)']))
+            vac_pot = formatar_valor(buscar_campo_mult(row, ['Bomba de Vácuo de Cloro - Potência (cv)', 'Bomba de Vacuo de Cloro - Potencia (cv)']))
+            vac_vaz = formatar_valor(buscar_campo_mult(row, ['Bomba de Vácuo de Cloro - Vazão (m³/h)', 'Bomba de Vacuo de Cloro - Vazao (m3/h)']))
 
             prod_chem = buscar_campo_mult(row, ['Produto Químico Principal', 'Produto Quimico Principal'])
             obs_eta = buscar_campo_mult(row, ['OBSERVAÇÕES', 'Observações', 'Obs', 'OBS', 'OBSERVAÇÃO', 'Observacao'])
@@ -371,6 +377,14 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
                 if dado_valido(b2_alt): txt_b2 += f" | Altura: {b2_alt} mca"
                 pdf.cell(0, 5.5, txt_b2, ln=True)
 
+            if dado_valido(vac_tipo) or dado_valido(vac_pot) or dado_valido(vac_vaz) or dado_valido(vac_alt):
+                txt_vac = "Bomba de Vacuo de Cloro:"
+                if dado_valido(vac_tipo): txt_vac += f" {limpar_acentos(vac_tipo)}"
+                if dado_valido(vac_pot): txt_vac += f" | Potencia: {vac_pot} cv"
+                if dado_valido(vac_vaz): txt_vac += f" | Vazao: {vac_vaz} m3/h"
+                if dado_valido(vac_alt): txt_vac += f" | Altura: {vac_alt} mca"
+                pdf.cell(0, 5.5, txt_vac, ln=True)
+
             if dado_valido(prod_chem): pdf.cell(0, 5.5, f"Produtos Quimicos: {limpar_acentos(prod_chem)}", ln=True)
             if dado_valido(obs_eta): pdf.multi_cell(0, 5.5, f"Obs: {limpar_acentos(obs_eta)}")
 
@@ -395,7 +409,7 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
             pdf.ln(2)
         pdf.ln(3)
 
-    # 3. POÇOS (PDF ATUALIZADO)
+    # 3. POÇOS
     if not df_p.empty:
         pdf.set_font("Helvetica", "B", 11)
         pdf.cell(0, 7, "3. SISTEMA DE POCOS ARTESIANOS (SUBTERRANEO)", ln=True)
@@ -608,7 +622,7 @@ try:
                     st.markdown("---")
                 st.markdown("</div>", unsafe_allow_html=True)
 
-        # --- CARD ESTAÇÃO DE TRATAMENTO DE ÁGUA (ETA) ---
+        # --- CARD ESTAÇÃO DE TRATAMENTO DE ÁGUA (ETA - ATUALIZADO) ---
         with col_eta:
             if not dados_eta.empty:
                 st.markdown("<div class='card'><div class='card-title'>⚡ ESTAÇÃO DE TRATAMENTO DE ÁGUA (ETA)</div>", unsafe_allow_html=True)
@@ -689,6 +703,20 @@ try:
                         if dado_valido(b2_alt): txt_b2 += f" | Altura: {b2_alt} mca"
                         st.write(txt_b2)
 
+                    # Bomba de Vácuo de Cloro
+                    vac_tipo = buscar_campo_mult(row, ['Bomba de Vácuo de Cloro - Tipo', 'Bomba de Vacuo de Cloro - Tipo'])
+                    vac_alt = formatar_valor(buscar_campo_mult(row, ['Bomba de Vácuo de Cloro - Altura Manométrica (mca)', 'Bomba de Vacuo de Cloro - Altura Manometrica (mca)']))
+                    vac_pot = formatar_valor(buscar_campo_mult(row, ['Bomba de Vácuo de Cloro - Potência (cv)', 'Bomba de Vacuo de Cloro - Potencia (cv)']))
+                    vac_vaz = formatar_valor(buscar_campo_mult(row, ['Bomba de Vácuo de Cloro - Vazão (m³/h)', 'Bomba de Vacuo de Cloro - Vazao (m3/h)']))
+
+                    if dado_valido(vac_tipo) or dado_valido(vac_pot) or dado_valido(vac_vaz) or dado_valido(vac_alt):
+                        txt_vac = "**Bomba de Vácuo de Cloro:**"
+                        if dado_valido(vac_tipo): txt_vac += f" {vac_tipo}"
+                        if dado_valido(vac_pot): txt_vac += f" | Potência: {vac_pot} cv"
+                        if dado_valido(vac_vaz): txt_vac += f" | Vazão: {vac_vaz} m³/h"
+                        if dado_valido(vac_alt): txt_vac += f" | Altura: {vac_alt} mca"
+                        st.write(txt_vac)
+
                     d_alt = formatar_valor(buscar_campo_mult(row, ['Decantador - Altura (m)']))
                     d_vol = formatar_valor(buscar_campo_mult(row, ['Decantador - Volume (m³)', 'Decantador - Volume (m3)']))
                     if dado_valido(d_alt) or dado_valido(d_vol):
@@ -740,7 +768,7 @@ try:
                 diam_adu = formatar_valor(buscar_campo_mult(row, ['Diâmetro da Adutora (mm)']) or '—')
                 st.warning(f"🚨 **Atenção:** Sistema Interligado! Origem: {row[c_origem]} ➔ Destino: {row[c_destino]} | Diâmetro: {diam_adu}mm")
 
-    # 3. Seção de Poços Artesianos (TELA ATUALIZADA)
+    # 3. Seção de Poços Artesianos
     if not dados_poc.empty:
         st.header("🕳️ Sistema de Poços Artesianos (Captação Subterrânea)")
         cols_pocos = st.columns(3)
