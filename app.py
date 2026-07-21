@@ -298,7 +298,7 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
             pdf.ln(2)
         pdf.ln(3)
 
-    # 2. ETA (PDF ATUALIZADO COM BOMBA DE VÁCUO DE CLORO)
+    # 2. ETA (PDF ATUALIZADO COM AS COLUNAS AN ATÉ AP)
     if not df_e.empty:
         pdf.set_font("Helvetica", "B", 11)
         pdf.cell(0, 7, "2. ESTACAO DE TRATAMENTO DE AGUA (ETA)", ln=True)
@@ -336,6 +336,13 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
             vac_alt = formatar_valor(buscar_campo_mult(row, ['Bomba de Vácuo de Cloro - Altura Manométrica (mca)', 'Bomba de Vacuo de Cloro - Altura Manometrica (mca)']))
             vac_pot = formatar_valor(buscar_campo_mult(row, ['Bomba de Vácuo de Cloro - Potência (cv)', 'Bomba de Vacuo de Cloro - Potencia (cv)']))
             vac_vaz = formatar_valor(buscar_campo_mult(row, ['Bomba de Vácuo de Cloro - Vazão (m³/h)', 'Bomba de Vacuo de Cloro - Vazao (m3/h)']))
+
+            # Bomba de Reaproveitamento (AN e AO)
+            reap_tipo = buscar_campo_mult(row, ['Bomba de reaproveitamento - Tipo', 'Bomba de reaproveitamento - tipo'])
+            reap_pot = formatar_valor(buscar_campo_mult(row, ['Bomba de reaproveitamento - potência (CV)', 'Bomba de reaproveitamento - potencia (CV)', 'Bomba de reaproveitamento - Potência (CV)']))
+
+            # Bomba de Arrasto de Cloro (AP)
+            arr_tipo = buscar_campo_mult(row, ['Bomba de arrasto de cloro - Tipo', 'Bomba de arrasto de cloro - tipo'])
 
             prod_chem = buscar_campo_mult(row, ['Produto Químico Principal', 'Produto Quimico Principal'])
             obs_eta = buscar_campo_mult(row, ['OBSERVAÇÕES', 'Observações', 'Obs', 'OBS', 'OBSERVAÇÃO', 'Observacao'])
@@ -384,6 +391,15 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
                 if dado_valido(vac_vaz): txt_vac += f" | Vazao: {vac_vaz} m3/h"
                 if dado_valido(vac_alt): txt_vac += f" | Altura: {vac_alt} mca"
                 pdf.cell(0, 5.5, txt_vac, ln=True)
+
+            if dado_valido(reap_tipo) or dado_valido(reap_pot):
+                txt_reap = "Bomba de Reaproveitamento:"
+                if dado_valido(reap_tipo): txt_reap += f" {limpar_acentos(reap_tipo)}"
+                if dado_valido(reap_pot): txt_reap += f" | Potencia: {reap_pot} cv"
+                pdf.cell(0, 5.5, txt_reap, ln=True)
+
+            if dado_valido(arr_tipo):
+                pdf.cell(0, 5.5, f"Bomba de Arrasto de Cloro: {limpar_acentos(arr_tipo)}", ln=True)
 
             if dado_valido(prod_chem): pdf.cell(0, 5.5, f"Produtos Quimicos: {limpar_acentos(prod_chem)}", ln=True)
             if dado_valido(obs_eta): pdf.multi_cell(0, 5.5, f"Obs: {limpar_acentos(obs_eta)}")
@@ -716,6 +732,21 @@ try:
                         if dado_valido(vac_vaz): txt_vac += f" | Vazão: {vac_vaz} m³/h"
                         if dado_valido(vac_alt): txt_vac += f" | Altura: {vac_alt} mca"
                         st.write(txt_vac)
+
+                    # Bomba de Reaproveitamento (AN e AO)
+                    reap_tipo = buscar_campo_mult(row, ['Bomba de reaproveitamento - Tipo', 'Bomba de reaproveitamento - tipo'])
+                    reap_pot = formatar_valor(buscar_campo_mult(row, ['Bomba de reaproveitamento - potência (CV)', 'Bomba de reaproveitamento - potencia (CV)', 'Bomba de reaproveitamento - Potência (CV)']))
+
+                    if dado_valido(reap_tipo) or dado_valido(reap_pot):
+                        txt_reap = "**Bomba de Reaproveitamento:**"
+                        if dado_valido(reap_tipo): txt_reap += f" {reap_tipo}"
+                        if dado_valido(reap_pot): txt_reap += f" | Potência: {reap_pot} cv"
+                        st.write(txt_reap)
+
+                    # Bomba de Arrasto de Cloro (AP)
+                    arr_tipo = buscar_campo_mult(row, ['Bomba de arrasto de cloro - Tipo', 'Bomba de arrasto de cloro - tipo'])
+                    if dado_valido(arr_tipo):
+                        st.write(f"**Bomba de Arrasto de Cloro:** {arr_tipo}")
 
                     d_alt = formatar_valor(buscar_campo_mult(row, ['Decantador - Altura (m)']))
                     d_vol = formatar_valor(buscar_campo_mult(row, ['Decantador - Volume (m³)', 'Decantador - Volume (m3)']))
