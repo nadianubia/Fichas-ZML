@@ -298,7 +298,7 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
             pdf.ln(2)
         pdf.ln(3)
 
-    # 2. ETA (INCLUINDO AS DUAS BOMBAS DE LAVAGEM NO PDF)
+    # 2. ETA
     if not df_e.empty:
         pdf.set_font("Helvetica", "B", 11)
         pdf.cell(0, 7, "2. ESTACAO DE TRATAMENTO DE AGUA (ETA)", ln=True)
@@ -309,13 +309,23 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
             eta_tipo = buscar_campo_mult(row, ['ETA - Tipo'])
             filtros_qtd = formatar_valor(buscar_campo_mult(row, ['Filtros - Quantidade']))
             
-            # --- CAMPOS NOVOS DA BOMBA 01 NO PDF ---
+            # Bombas de Saturação
+            sat1_tipo = buscar_campo_mult(row, ['Bomba de saturação 01 - Tipo', 'Bomba de saturacao 01 - Tipo'])
+            sat1_alt = formatar_valor(buscar_campo_mult(row, ['Bomba de saturação 01 - Altura Manométrica 01 (mca)', 'Bomba de saturacao 01 - Altura Manometrica 01 (mca)']))
+            sat1_pot = formatar_valor(buscar_campo_mult(row, ['Bomba de saturação 01 - Potência 01 (cv)', 'Bomba de saturacao 01 - Potencia 01 (cv)']))
+            sat1_vaz = formatar_valor(buscar_campo_mult(row, ['Bomba de saturação 01 - Vazão 01 (m³/h)', 'Bomba de saturacao 01 - Vazao 01 (m3/h)']))
+
+            sat2_tipo = buscar_campo_mult(row, ['Bomba de saturação 02 - Tipo', 'Bomba de saturacao 02 - Tipo'])
+            sat2_alt = formatar_valor(buscar_campo_mult(row, ['Bomba de saturação 02 - Altura Manométrica 02 (mca)', 'Bomba de saturacao 02 - Altura Manometrica 02 (mca)']))
+            sat2_pot = formatar_valor(buscar_campo_mult(row, ['Bomba de saturação 02 - Potência 02 (cv)', 'Bomba de saturacao 02 - Potencia 02 (cv)']))
+            sat2_vaz = formatar_valor(buscar_campo_mult(row, ['Bomba de saturação 02 - Vazão 02 (m³/h)', 'Bomba de saturacao 02 - Vazao 02 (m3/h)']))
+
+            # Bombas de Lavagem
             b1_tipo = buscar_campo_mult(row, ['Bomba de lavagem 01 - Tipo'])
             b1_alt = formatar_valor(buscar_campo_mult(row, ['Bomba de lavagem 01 - Altura Manométrica 01 (mca)', 'Bomba de lavagem 01 - Altura Manometrica 01 (mca)']))
             b1_pot = formatar_valor(buscar_campo_mult(row, ['Bomba de lavagem 01 - Potência 01 (cv)', 'Bomba de lavagem 01 - Potencia 01 (cv)']))
             b1_vaz = formatar_valor(buscar_campo_mult(row, ['Bomba de lavagem 01 - Vazão 01 (m³/h)', 'Bomba de lavagem 01 - Vazao 01 (m3/h)']))
 
-            # --- CAMPOS NOVOS DA BOMBA 02 NO PDF ---
             b2_tipo = buscar_campo_mult(row, ['Bomba de lavagem 02 - Tipo'])
             b2_alt = formatar_valor(buscar_campo_mult(row, ['Bomba de lavagem 02 - Altura Manométrica 02 (mca)', 'Bomba de lavagem 02 - Altura Manometrica 02 (mca)']))
             b2_pot = formatar_valor(buscar_campo_mult(row, ['Bomba de lavagem 02 - Potência 02 (cv)', 'Bomba de lavagem 02 - Potencia 02 (cv)']))
@@ -329,7 +339,22 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
             if dado_valido(eta_tipo): pdf.cell(0, 5.5, f"Tipo da ETA: {limpar_acentos(eta_tipo)}", ln=True)
             if dado_valido(filtros_qtd): pdf.cell(0, 5.5, f"Filtros: {filtros_qtd} unidade(s)", ln=True)
             
-            # Impressão Bomba 01 no PDF
+            if dado_valido(sat1_tipo) or dado_valido(sat1_pot) or dado_valido(sat1_vaz) or dado_valido(sat1_alt):
+                txt_sat1 = "Bomba de Saturacao 01:"
+                if dado_valido(sat1_tipo): txt_sat1 += f" {limpar_acentos(sat1_tipo)}"
+                if dado_valido(sat1_pot): txt_sat1 += f" | Potencia: {sat1_pot} cv"
+                if dado_valido(sat1_vaz): txt_sat1 += f" | Vazao: {sat1_vaz} m3/h"
+                if dado_valido(sat1_alt): txt_sat1 += f" | Altura: {sat1_alt} mca"
+                pdf.cell(0, 5.5, txt_sat1, ln=True)
+
+            if dado_valido(sat2_tipo) or dado_valido(sat2_pot) or dado_valido(sat2_vaz) or dado_valido(sat2_alt):
+                txt_sat2 = "Bomba de Saturacao 02:"
+                if dado_valido(sat2_tipo): txt_sat2 += f" {limpar_acentos(sat2_tipo)}"
+                if dado_valido(sat2_pot): txt_sat2 += f" | Potencia: {sat2_pot} cv"
+                if dado_valido(sat2_vaz): txt_sat2 += f" | Vazao: {sat2_vaz} m3/h"
+                if dado_valido(sat2_alt): txt_sat2 += f" | Altura: {sat2_alt} mca"
+                pdf.cell(0, 5.5, txt_sat2, ln=True)
+
             if dado_valido(b1_tipo) or dado_valido(b1_pot) or dado_valido(b1_vaz) or dado_valido(b1_alt):
                 txt_b1 = "Bomba de Lavagem 01:"
                 if dado_valido(b1_tipo): txt_b1 += f" {limpar_acentos(b1_tipo)}"
@@ -338,7 +363,6 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
                 if dado_valido(b1_alt): txt_b1 += f" | Altura: {b1_alt} mca"
                 pdf.cell(0, 5.5, txt_b1, ln=True)
 
-            # Impressão Bomba 02 no PDF
             if dado_valido(b2_tipo) or dado_valido(b2_pot) or dado_valido(b2_vaz) or dado_valido(b2_alt):
                 txt_b2 = "Bomba de Lavagem 02:"
                 if dado_valido(b2_tipo): txt_b2 += f" {limpar_acentos(b2_tipo)}"
@@ -371,7 +395,7 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
             pdf.ln(2)
         pdf.ln(3)
 
-    # 3. POÇOS
+    # 3. POÇOS (PDF ATUALIZADO)
     if not df_p.empty:
         pdf.set_font("Helvetica", "B", 11)
         pdf.cell(0, 7, "3. SISTEMA DE POCOS ARTESIANOS (SUBTERRANEO)", ln=True)
@@ -381,21 +405,29 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
 
             id_p = buscar_campo_mult(row, ['Identificação do Poço', 'Poço']) or 'Poco'
             cc_p = formatar_valor(buscar_campo_mult(row, ['CC Equatorial', 'CC Equatorial Poço', 'CC Poço', 'CC', 'Código do Cliente', 'CC Equatorial (Poço)']))
+            
             pdf.set_font("Helvetica", "B", 10)
             txt_head_p = f"Poco: {limpar_acentos(id_p)}"
             if dado_valido(cc_p): txt_head_p += f" (CC: {cc_p})"
             pdf.cell(0, 5.5, txt_head_p, ln=True)
             pdf.set_font("Helvetica", "", 10)
             
+            tipo_bomba_p = buscar_campo_mult(row, ['Tipo da bomba', 'Tipo de Bomba', 'Tipo Bomba'])
+            loc_poco = buscar_campo_mult(row, ['Localização do Poço', 'Localizacao do Poco', 'Localização', 'Localizacao'])
             pot_b = formatar_valor(buscar_campo_mult(row, ['Potência da Bomba (cv)', 'Potência (cv)']))
             alt_b = formatar_valor(buscar_campo_mult(row, ['Altura da Bomba (mca)', 'Altura (mca)']))
             vaz_b = formatar_valor(buscar_campo_mult(row, ['Vazão (m³/h)', 'Vazão']))
             obs_p = buscar_campo_mult(row, ['OBSERVAÇÕES', 'Observações', 'Obs', 'OBS', 'OBSERVAÇÃO', 'Observacao'])
             
+            if dado_valido(loc_poco):
+                pdf.cell(0, 5, f"  Localizacao: {limpar_acentos(loc_poco)}", ln=True)
+
             detalhes = []
+            if dado_valido(tipo_bomba_p): detalhes.append(f"Tipo: {limpar_acentos(tipo_bomba_p)}")
             if dado_valido(pot_b): detalhes.append(f"Potencia: {pot_b} cv")
             if dado_valido(alt_b): detalhes.append(f"Altura: {alt_b} mca")
             if dado_valido(vaz_b): detalhes.append(f"Vazao: {vaz_b} m3/h")
+            
             if detalhes: pdf.cell(0, 5, "  " + " | ".join(detalhes), ln=True)
             if dado_valido(obs_p): pdf.multi_cell(0, 5, f"  Obs: {limpar_acentos(obs_p)}")
 
@@ -603,7 +635,34 @@ try:
                         if dado_valido(f_vol): txt_f += f" | Volume Total: {f_vol} m³"
                         st.write(txt_f)
 
-                    # --- NOVOS CAMPOS EXIBIDOS NA TELA DA ETA (BOMBA 01 E 02) ---
+                    # Bombas de Saturação
+                    sat1_tipo = buscar_campo_mult(row, ['Bomba de saturação 01 - Tipo', 'Bomba de saturacao 01 - Tipo'])
+                    sat1_alt = formatar_valor(buscar_campo_mult(row, ['Bomba de saturação 01 - Altura Manométrica 01 (mca)', 'Bomba de saturacao 01 - Altura Manometrica 01 (mca)']))
+                    sat1_pot = formatar_valor(buscar_campo_mult(row, ['Bomba de saturação 01 - Potência 01 (cv)', 'Bomba de saturacao 01 - Potencia 01 (cv)']))
+                    sat1_vaz = formatar_valor(buscar_campo_mult(row, ['Bomba de saturação 01 - Vazão 01 (m³/h)', 'Bomba de saturacao 01 - Vazao 01 (m3/h)']))
+
+                    if dado_valido(sat1_tipo) or dado_valido(sat1_pot) or dado_valido(sat1_vaz) or dado_valido(sat1_alt):
+                        txt_sat1 = "**Bomba de Saturação 01:**"
+                        if dado_valido(sat1_tipo): txt_sat1 += f" {sat1_tipo}"
+                        if dado_valido(sat1_pot): txt_sat1 += f" | Potência: {sat1_pot} cv"
+                        if dado_valido(sat1_vaz): txt_sat1 += f" | Vazão: {sat1_vaz} m³/h"
+                        if dado_valido(sat1_alt): txt_sat1 += f" | Altura: {sat1_alt} mca"
+                        st.write(txt_sat1)
+
+                    sat2_tipo = buscar_campo_mult(row, ['Bomba de saturação 02 - Tipo', 'Bomba de saturacao 02 - Tipo'])
+                    sat2_alt = formatar_valor(buscar_campo_mult(row, ['Bomba de saturação 02 - Altura Manométrica 02 (mca)', 'Bomba de saturacao 02 - Altura Manometrica 02 (mca)']))
+                    sat2_pot = formatar_valor(buscar_campo_mult(row, ['Bomba de saturação 02 - Potência 02 (cv)', 'Bomba de saturacao 02 - Potencia 02 (cv)']))
+                    sat2_vaz = formatar_valor(buscar_campo_mult(row, ['Bomba de saturação 02 - Vazão 02 (m³/h)', 'Bomba de saturacao 02 - Vazao 02 (m3/h)']))
+
+                    if dado_valido(sat2_tipo) or dado_valido(sat2_pot) or dado_valido(sat2_vaz) or dado_valido(sat2_alt):
+                        txt_sat2 = "**Bomba de Saturação 02:**"
+                        if dado_valido(sat2_tipo): txt_sat2 += f" {sat2_tipo}"
+                        if dado_valido(sat2_pot): txt_sat2 += f" | Potência: {sat2_pot} cv"
+                        if dado_valido(sat2_vaz): txt_sat2 += f" | Vazão: {sat2_vaz} m³/h"
+                        if dado_valido(sat2_alt): txt_sat2 += f" | Altura: {sat2_alt} mca"
+                        st.write(txt_sat2)
+
+                    # Bombas de Lavagem
                     b1_tipo = buscar_campo_mult(row, ['Bomba de lavagem 01 - Tipo'])
                     b1_alt = formatar_valor(buscar_campo_mult(row, ['Bomba de lavagem 01 - Altura Manométrica 01 (mca)', 'Bomba de lavagem 01 - Altura Manometrica 01 (mca)']))
                     b1_pot = formatar_valor(buscar_campo_mult(row, ['Bomba de lavagem 01 - Potência 01 (cv)', 'Bomba de lavagem 01 - Potencia 01 (cv)']))
@@ -681,7 +740,7 @@ try:
                 diam_adu = formatar_valor(buscar_campo_mult(row, ['Diâmetro da Adutora (mm)']) or '—')
                 st.warning(f"🚨 **Atenção:** Sistema Interligado! Origem: {row[c_origem]} ➔ Destino: {row[c_destino]} | Diâmetro: {diam_adu}mm")
 
-    # 3. Seção de Poços Artesianos
+    # 3. Seção de Poços Artesianos (TELA ATUALIZADA)
     if not dados_poc.empty:
         st.header("🕳️ Sistema de Poços Artesianos (Captação Subterrânea)")
         cols_pocos = st.columns(3)
@@ -696,9 +755,15 @@ try:
                 loc_p = buscar_campo_mult(row, ['Localidade/Região', 'Localidade'])
                 if dado_valido(loc_p): st.write(f"**Região/Localidade:** {loc_p}")
 
+                loc_poco = buscar_campo_mult(row, ['Localização do Poço', 'Localizacao do Poco', 'Localização', 'Localizacao'])
+                if dado_valido(loc_poco): st.write(f"**Localização:** {loc_poco}")
+
                 cc_poco = formatar_valor(buscar_campo_mult(row, ['CC Equatorial', 'CC Equatorial Poço', 'CC Poço', 'CC', 'Código do Cliente', 'CC Equatorial (Poço)']))
                 if dado_valido(cc_poco): st.write(f"**⚡ CC Equatorial:** {cc_poco}")
                 
+                tipo_bomba_p = buscar_campo_mult(row, ['Tipo da bomba', 'Tipo de Bomba', 'Tipo Bomba'])
+                if dado_valido(tipo_bomba_p): st.write(f"**Tipo da Bomba:** {tipo_bomba_p}")
+
                 pot_b = formatar_valor(buscar_campo_mult(row, ['Potência da Bomba (cv)', 'Potência (cv)']))
                 alt_b = formatar_valor(buscar_campo_mult(row, ['Altura da Bomba (mca)', 'Altura (mca)']))
                 vaz_b = formatar_valor(buscar_campo_mult(row, ['Vazão (m³/h)', 'Vazão']))
