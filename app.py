@@ -10,7 +10,7 @@ from PIL import Image
 # Configuração da página para modo amplo (wide)
 st.set_page_config(
     page_title="CASAL - Fichas Técnicas dos Sistemas ZML",
-    page_icon="🚰",
+    page_icon="💧",
     layout="wide"
 )
 
@@ -52,11 +52,36 @@ st.markdown("""
         box-shadow: 2px 2px 5px rgba(0,0,0,0.05);
     }
     .card-title { color: #1F4E79; font-weight: bold; margin-bottom: 12px; font-size: 1.15rem; }
+    
+    .link-gmaps-container {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 8px;
+        margin-bottom: 8px;
+        text-decoration: none;
+    }
+    .link-gmaps-text {
+        color: #1a73e8;
+        font-weight: bold;
+        font-size: 0.95rem;
+    }
+    .link-gmaps-text:hover {
+        text-decoration: underline;
+    }
     </style>
 """, unsafe_allow_html=True)
 
 # URL Base Única da Planilha Fichas-ZML
 base_url = "https://docs.google.com/spreadsheets/d/1cUfZoPkVmiOivWXmRK4u3Vlp435f4_DeFzGvTFQOiNw/gviz/tq?tqx=out:csv&sheet="
+
+# Ícone SVG do Pin Vermelho do Google Maps (idêntico à imagem enviada)
+MAP_PIN_RED_SVG = """
+<svg width="18" height="24" viewBox="0 0 384 512" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align: middle;">
+    <path fill="#EA4335" d="M172.268 501.67C26.97 291.03 0 269.413 0 192 0 85.961 85.961 0 192 0s192 85.961 192 192c0 77.413-26.97 99.03-172.268 309.67-9.535 13.774-29.93 13.773-39.464 0z"/>
+    <circle cx="192" cy="192" r="80" fill="#FFFFFF"/>
+</svg>
+"""
 
 LOGO_PATH = None
 for ext in ['png', 'jpg', 'jpeg']:
@@ -174,6 +199,30 @@ def converter_coordenada(val):
         return None
     return None
 
+def obter_link_gmaps(row, df_geo=None):
+    """Busca ou constrói o link do Google Maps para uma linha específica (Poço, Captação, ETA)"""
+    lat = buscar_campo_mult(row, ['Latitude', 'LATITUDE', 'Lat'])
+    lon = buscar_campo_mult(row, ['Longitude', 'LONGITUDE', 'Long', 'Lon'])
+    
+    lat_f = converter_coordenada(lat)
+    lon_f = converter_coordenada(lon)
+    
+    if (lat_f is None or lon_f is None) and df_geo is not None and not df_geo.empty:
+        id_nome = buscar_campo_mult(row, ['Identificação do Poço', 'Poço', 'Unidade', 'Localidade'])
+        if id_nome:
+            id_norm = limpar_acentos(id_nome).upper().strip()
+            for _, r_g in df_geo.iterrows():
+                nome_geo = buscar_campo_mult(r_g, ['Unidade', 'UNIDADE', 'Descrição', 'Descricao', 'Estrutura', 'Nome'])
+                if nome_geo and (limpar_acentos(nome_geo).upper().strip() in id_norm or id_norm in limpar_acentos(nome_geo).upper().strip()):
+                    lat_f = converter_coordenada(buscar_campo_mult(r_g, ['Latitude', 'LATITUDE', 'Lat']))
+                    lon_f = converter_coordenada(buscar_campo_mult(r_g, ['Longitude', 'LONGITUDE', 'Long', 'Lon']))
+                    if lat_f is not None and lon_f is not None:
+                        break
+
+    if lat_f is not None and lon_f is not None:
+        return f"https://www.google.com/maps/search/?api=1&query={lat_f},{lon_f}"
+    return None
+
 @st.cache_data(ttl=60)
 def carregar_dados():
     try: df_cap = pd.read_csv(base_url + "DADOS_CAPTACAO")
@@ -193,7 +242,7 @@ def carregar_dados():
         
     return df_cap, df_eta, df_poc, df_adu, df_geo
 
-# --- GERADOR DE PDF COM FOTOS E OBSERVAÇÕES CORRIGIDAS ---
+# --- GERADOR DE PDF ---
 def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
     pdf = FPDF()
     pdf.add_page()
@@ -634,7 +683,7 @@ try:
 
     # 3. Seção de Poços Artesianos
     if not dados_poc.empty:
-        st.header("🕳️ Sistema de Poços Artesianos (Captação Subterrânea)")
+        st.header("💧 Sistema de Poços Artesianos (Captação Subterrânea)")
         cols_pocos = st.columns(3)
         
         idx = 0
@@ -642,7 +691,7 @@ try:
             col_atual = cols_pocos[idx % 3]
             with col_atual:
                 id_pocio = buscar_campo_mult(row, ['Identificação do Poço', 'Poço']) or '—'
-                st.markdown(f"<div class='card'><div class='card-title'>📍 {id_pocio}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='card'><div class='card-title'>💧 {id_pocio}</div>", unsafe_allow_html=True)
                 
                 loc_p = buscar_campo_mult(row, ['Localidade/Região', 'Localidade'])
                 if dado_valido(loc_p): st.write(f"**Região/Localidade:** {loc_p}")
@@ -658,6 +707,17 @@ try:
                 if dado_valido(alt_b): st.write(f"**Altura da Bomba:** {alt_b} mca")
                 if dado_valido(vaz_b): st.write(f"**Vazão Cadastrada:** {vaz_b} m³/h")
 
+                # Link com o símbolo vetorizado exato do Google Maps (Red Pin)
+                link_maps_p = obter_link_gmaps(row, df_geo=dados_geo)
+                if link_maps_p:
+                    st.markdown(
+                        f"""<a href='{link_maps_p}' target='_blank' class='link-gmaps-container'>
+                            {MAP_PIN_RED_SVG}
+                            <span class='link-gmaps-text'>Abrir Localização no Maps</span>
+                        </a>""", 
+                        unsafe_allow_html=True
+                    )
+
                 # Galeria Fotos Poço
                 fotos_poc = extrair_lista_fotos(row, "poc")
                 exibir_galeria_fotos(fotos_poc, legenda_base="Poço")
@@ -667,63 +727,6 @@ try:
 
     if dados_cap.empty and dados_eta.empty and dados_poc.empty:
         st.info("Nenhuma estrutura localizada para este município nos registros da planilha.")
-
-    # --- SEÇÃO DE GEOLOCALIZAÇÃO OTIMIZADA ---
-    if not dados_geo.empty:
-        pontos_mapa = []
-        for _, r_g in dados_geo.iterrows():
-            lat_col = buscar_campo_mult(r_g, ['Latitude', 'LATITUDE', 'Lat'])
-            lon_col = buscar_campo_mult(r_g, ['Longitude', 'LONGITUDE', 'Long', 'Lon'])
-            
-            lat_f = converter_coordenada(lat_col)
-            lon_f = converter_coordenada(lon_col)
-            
-            if lat_f is not None and lon_f is not None:
-                nome_est = buscar_campo_mult(r_g, ['Unidade', 'UNIDADE', 'Descrição', 'Descricao', 'Estrutura', 'Nome']) or 'Unidade Operacional'
-                
-                link_gmaps = f"https://www.google.com/maps/search/?api=1&query={lat_f},{lon_f}"
-                
-                pontos_mapa.append({
-                    'Unidade / Estrutura': str(nome_est),
-                    'Latitude': lat_f,
-                    'Longitude': lon_f,
-                    'Google Maps': link_gmaps
-                })
-
-        if pontos_mapa:
-            st.markdown("---")
-            st.header("📍 Geolocalização das Unidades Operacionais")
-            
-            df_mapa = pd.DataFrame(pontos_mapa)
-
-            col_mapa, col_lista = st.columns([1.2, 1])
-            
-            with col_mapa:
-                st.map(
-                    df_mapa, 
-                    latitude='Latitude', 
-                    longitude='Longitude', 
-                    zoom=11, 
-                    use_container_width=True
-                )
-                
-            with col_lista:
-                st.markdown("##### 📌 Unidades Mapeadas")
-                
-                st.dataframe(
-                    df_mapa[['Unidade / Estrutura', 'Google Maps']],
-                    column_config={
-                        "Unidade / Estrutura": st.column_config.TextColumn("Unidade Operacional", help="Nome da unidade"),
-                        "Google Maps": st.column_config.LinkColumn(
-                            "Rota GPS", 
-                            display_text="🗺️ Abrir no Maps",
-                            help="Clique para abrir as coordenadas no Google Maps"
-                        )
-                    },
-                    hide_index=True,
-                    use_container_width=True,
-                    height=380
-                )
 
 except Exception as e:
     st.error(f"Erro na leitura dos dados: {e}")
