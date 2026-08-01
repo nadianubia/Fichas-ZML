@@ -4,13 +4,6 @@ import requests
 import io
 import re
 
-# Importações do ReportLab para geração do PDF
-from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, KeepTogether, PageBreak
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib import colors
-from reportlab.pdfgen import canvas
-
 # ==============================================================================
 # CONFIGURAÇÃO DA PÁGINA STREAMLIT
 # ==============================================================================
@@ -41,11 +34,11 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# FUNÇÕES UTILITÁRIAS E LEITURA DA PLANILHA (SISTEMA ORIGINAL)
+# FUNÇÕES UTILITÁRIAS E LEITURA DA PLANILHA
 # ==============================================================================
 
 @st.cache_data(ttl=600)
-def carregar_dados_planilha(caminho_arquivo="dados.xlsx"):
+def carregar_dados_planilha(caminho_arquivo="Fichas-ZML.xlsx"):
     """Carrega as abas da planilha original do projeto."""
     try:
         excel = pd.ExcelFile(caminho_arquivo)
@@ -56,7 +49,7 @@ def carregar_dados_planilha(caminho_arquivo="dados.xlsx"):
         df_adu = pd.read_excel(excel, 'ADUTORAS') if 'ADUTORAS' in excel.sheet_names else pd.DataFrame()
         return df_cap, df_eta, df_poc, df_geo, df_adu
     except Exception as e:
-        st.error(f"Erro ao carregar a planilha: {e}")
+        st.error(f"Erro ao carregar a planilha [{caminho_arquivo}]: {e}")
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
 def buscar_campo_mult(row, lista_campos):
@@ -122,7 +115,7 @@ st.markdown("##### CASAL - Companhia de Saneamento de Alagoas")
 st.markdown("---")
 
 if not lista_municipios:
-    st.warning("Nenhum município localizado na planilha.")
+    st.warning("Nenhum município localizado na planilha. Verifique se o nome do arquivo Excel está correto no código.")
 else:
     # --- BARRA DE SELEÇÃO E BOTÃO DE PDF ---
     col_sel, col_pdf = st.columns([2.5, 1])
@@ -145,7 +138,7 @@ else:
         st.markdown(f"Exibindo dados operacionais atuais para: **{municipio_selecionado}**")
 
     with col_btn_sirius:
-        # Botão direto sem dependência de imagem
+        # Botão direto sem dependência de imagem local
         if st.button(f"🌐 Consultar Histórico no Sirius ({municipio_selecionado})", key="btn_sirius_hist", use_container_width=True):
             st.session_state['abrir_historico'] = True
 
