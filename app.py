@@ -34,22 +34,31 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# FUNÇÕES UTILITÁRIAS E LEITURA DA PLANILHA
+# FUNÇÕES UTILITÁRIAS E LEITURA DO GOOGLE SHEETS
 # ==============================================================================
 
 @st.cache_data(ttl=600)
-def carregar_dados_planilha(caminho_arquivo="Fichas-ZML.xlsx"):
-    """Carrega as abas da planilha original do projeto."""
+def carregar_dados_planilha():
+    """Carrega as abas diretamente do Google Sheets via exportação CSV."""
+    # ⚠️ Cole abaixo o ID da sua planilha do Google Sheets:
+    SHEET_ID = "1cUfZoPkVmiOivWXmRK4u3Vlp435f4_DeFzGvTFQOiNw"
+    
+    def ler_aba(nome_aba):
+        url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={nome_aba}"
+        try:
+            return pd.read_csv(url)
+        except Exception:
+            return pd.DataFrame()
+
     try:
-        excel = pd.ExcelFile(caminho_arquivo)
-        df_cap = pd.read_excel(excel, 'CAPTAÇÃO') if 'CAPTAÇÃO' in excel.sheet_names else pd.DataFrame()
-        df_eta = pd.read_excel(excel, 'ETA') if 'ETA' in excel.sheet_names else pd.DataFrame()
-        df_poc = pd.read_excel(excel, 'POÇOS') if 'POÇOS' in excel.sheet_names else pd.DataFrame()
-        df_geo = pd.read_excel(excel, 'GEO') if 'GEO' in excel.sheet_names else pd.DataFrame()
-        df_adu = pd.read_excel(excel, 'ADUTORAS') if 'ADUTORAS' in excel.sheet_names else pd.DataFrame()
+        df_cap = ler_aba('CAPTAÇÃO')
+        df_eta = ler_aba('ETA')
+        df_poc = ler_aba('POÇOS')
+        df_geo = ler_aba('GEO')
+        df_adu = ler_aba('ADUTORAS')
         return df_cap, df_eta, df_poc, df_geo, df_adu
     except Exception as e:
-        st.error(f"Erro ao carregar a planilha [{caminho_arquivo}]: {e}")
+        st.error(f"Erro ao carregar dados do Google Sheets: {e}")
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
 def buscar_campo_mult(row, lista_campos):
@@ -94,7 +103,7 @@ def exibir_galeria_fotos(lista_fotos, legenda_base=""):
                 st.image(url_foto, caption=f"{legenda_base} - Foto {idx+1}", use_column_width=True)
 
 # ==============================================================================
-# CARREGAMENTO INICIAL DADOS PLANILHA
+# CARREGAMENTO INICIAL DOS DADOS
 # ==============================================================================
 
 df_cap, df_eta, df_poc, df_geo, df_adutoras = carregar_dados_planilha()
@@ -115,7 +124,7 @@ st.markdown("##### CASAL - Companhia de Saneamento de Alagoas")
 st.markdown("---")
 
 if not lista_municipios:
-    st.warning("Nenhum município localizado na planilha. Verifique se o nome do arquivo Excel está correto no código.")
+    st.warning("Nenhum município localizado na planilha. Verifique se o ID do Google Sheets está correto e a planilha está pública (Qualquer pessoa com o link).")
 else:
     # --- BARRA DE SELEÇÃO E BOTÃO DE PDF ---
     col_sel, col_pdf = st.columns([2.5, 1])
@@ -127,7 +136,7 @@ else:
         )
 
     with col_pdf:
-        st.write("") # Alinhamento visual com o Selectbox
+        st.write("") # Alinhamento visual
         st.write("")
         st.button("🎴 Salvar Ficha em PDF", key="btn_pdf_dummy", use_container_width=True)
 
@@ -138,13 +147,12 @@ else:
         st.markdown(f"Exibindo dados operacionais atuais para: **{municipio_selecionado}**")
 
     with col_btn_sirius:
-        # Botão direto sem dependência de imagem local
         if st.button(f"🌐 Consultar Histórico no Sirius ({municipio_selecionado})", key="btn_sirius_hist", use_container_width=True):
             st.session_state['abrir_historico'] = True
 
     st.markdown("---")
 
-    # --- CONTAINER DO HISTÓRICO EXIBIDO APÓS CLICAR NO BOTÃO ---
+    # --- CONTAINER DO HISTÓRICO SIRIUS ---
     if st.session_state.get('abrir_historico', False):
         with st.spinner(f"Buscando histórico no Sirius Integrado para {municipio_selecionado}..."):
             try:
@@ -155,7 +163,6 @@ else:
                     dados_historico = res.json()
                     df_hist = pd.DataFrame(dados_historico)
                     
-                    # Filtra pelo município selecionado se o parâmetro existir na API
                     col_m = next((c for c in ['Município', 'MUNICÍPIO', 'Municipio', 'Cidade', 'cidade'] if c in df_hist.columns), None)
                     if col_m:
                         df_hist = df_hist[df_hist[col_m].astype(str).str.strip().str.upper() == municipio_selecionado]
