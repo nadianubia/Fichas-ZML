@@ -53,27 +53,18 @@ st.markdown("""
     }
     .card-title { color: #1F4E79; font-weight: bold; margin-bottom: 12px; font-size: 1.15rem; }
 
-    /* Botão elegante para o Google Maps */
-    .btn-maps {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        background-color: #e8f4fd;
-        color: #1F4E79 !important;
-        padding: 6px 12px;
-        border-radius: 6px;
+    /* Link discreto e pequeno para o Google Maps */
+    .link-maps-discreto {
+        display: inline-block;
+        color: #006699 !important;
         font-size: 0.85rem;
-        font-weight: 600;
-        text-decoration: none !important;
-        border: 1px solid #bee3f8;
-        margin-top: 8px;
+        font-weight: 500;
+        text-decoration: underline !important;
+        margin-top: 6px;
         margin-bottom: 8px;
-        transition: all 0.2s ease;
     }
-    .btn-maps:hover {
-        background-color: #1F4E79;
-        color: #ffffff !important;
-        border-color: #1F4E79;
+    .link-maps-discreto:hover {
+        color: #1F4E79 !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -129,7 +120,6 @@ def formatar_link_drive(url):
 def extrair_lista_fotos(row, tipo_aba):
     """Busca dinâmica por colunas de foto (01, 02, 03) independente da aba"""
     fotos = []
-    
     opcoes = []
     if tipo_aba == "cap":
         opcoes = ["Foto Captação", "Foto Captacao", "Foto"]
@@ -198,56 +188,48 @@ def converter_coordenada(val):
     return None
 
 def obter_link_gmaps(row, df_geo=None, tipo_busca=None):
-    """Busca ou constrói o link do Google Maps para uma linha específica (Poço, Captação, ETA)"""
-    link_direto = buscar_campo_mult(row, [
-        'Geolocalização', 'Geolocalizacao', 'Link Maps', 'Google Maps', 'Maps',
-        'Localização ETA', 'Localizacao ETA', 'Localização Captação', 'Localizacao Captacao',
-        'Localização', 'Localizacao', 'Coordenadas'
-    ])
-    if dado_valido(link_direto):
-        link_str = str(link_direto).strip()
-        if link_str.startswith('http://') or link_str.startswith('https://'):
-            return link_str
-
-    lat = buscar_campo_mult(row, ['Latitude', 'LATITUDE', 'Lat'])
-    lon = buscar_campo_mult(row, ['Longitude', 'LONGITUDE', 'Long', 'Lon'])
+    """Busca o link limpo do Maps priorizando a aba GEOLOCALIZACAO ou extraindo URLs limpas"""
     
-    lat_f = converter_coordenada(lat)
-    lon_f = converter_coordenada(lon)
-    
-    if lat_f is not None and lon_f is not None:
-        return f"https://www.google.com/maps/search/?api=1&query={lat_f},{lon_f}"
+    # Função interna para filtrar qualquer HTML/Tags e pegar apenas a URL
+    def extrair_url_pura(val):
+        if not dado_valido(val):
+            return None
+        texto = str(val).strip()
+        match = re.search(r'https?://[^\s\'"]+', texto)
+        if match:
+            return match.group(0)
+        return None
 
+    # 1. Identificador da estrutura nesta linha
+    id_nome = buscar_campo_mult(row, ['Identificação do Poço', 'Poço', 'Unidade', 'Localidade', 'Sistema', 'Captação - Tipo'])
+    id_norm = limpar_acentos(id_nome).upper().strip() if id_nome else ""
+
+    # 2. Busca na aba GEOLOCALIZACAO (Correspondência pela coluna 'Unidade' ou 'Latitude/Longitude')
     if df_geo is not None and not df_geo.empty:
-        id_nome = buscar_campo_mult(row, ['Identificação do Poço', 'Poço', 'Unidade', 'Localidade', 'Sistema'])
-        id_norm = limpar_acentos(id_nome).upper().strip() if id_nome else ""
-
         for _, r_g in df_geo.iterrows():
-            tipo_geo = buscar_campo_mult(r_g, ['Tipo', 'TIPO', 'Tipo Sistema', 'Estrutura', 'Descrição', 'Descricao', 'Unidade', 'UNIDADE'])
-            tipo_geo_norm = limpar_acentos(tipo_geo).upper().strip() if tipo_geo else ""
+            unid_geo = buscar_campo_mult(r_g, ['Unidade', 'UNIDADE', 'Descrição', 'Descricao'])
+            unid_geo_norm = limpar_acentos(unid_geo).upper().strip() if unid_geo else ""
             
-            nome_geo = buscar_campo_mult(r_g, ['Unidade', 'UNIDADE', 'Descrição', 'Descricao', 'Estrutura', 'Nome', 'Sistema', 'Localidade'])
-            nome_geo_norm = limpar_acentos(nome_geo).upper().strip() if nome_geo else ""
-            
-            match_tipo = True
-            if tipo_busca == 'cap':
-                match_tipo = any(k in tipo_geo_norm or k in nome_geo_norm for k in ['CAP', 'EEAB', 'CAPTACAO', 'CAPTAÇÃO', 'BOMBEAMENTO'])
-            elif tipo_busca == 'eta':
-                match_tipo = any(k in tipo_geo_norm or k in nome_geo_norm for k in ['ETA', 'TRATAMENTO'])
-            elif tipo_busca == 'poc':
-                match_tipo = any(k in tipo_geo_norm or k in nome_geo_norm for k in ['POCO', 'POÇO', 'SUBTERRANE'])
-
-            if (id_norm and (id_norm in nome_geo_norm or nome_geo_norm in id_norm)) or (match_tipo and len(df_geo) == 1):
-                link_g = buscar_campo_mult(r_g, ['Geolocalização', 'Geolocalizacao', 'Link Maps', 'Google Maps', 'Maps', 'Link'])
-                if dado_valido(link_g):
-                    l_str = str(link_g).strip()
-                    if l_str.startswith('http://') or l_str.startswith('https://'):
-                        return l_str
-                
+            # Se encontrou correspondência de nome/código (Ex: P-MAT-BJ 11 ou ETA - PORTO DE PEDRAS)
+            if id_norm and (id_norm in unid_geo_norm or unid_geo_norm in id_norm):
                 lat_g = converter_coordenada(buscar_campo_mult(r_g, ['Latitude', 'LATITUDE', 'Lat']))
                 lon_g = converter_coordenada(buscar_campo_mult(r_g, ['Longitude', 'LONGITUDE', 'Long', 'Lon']))
                 if lat_g is not None and lon_g is not None:
                     return f"https://www.google.com/maps/search/?api=1&query={lat_g},{lon_g}"
+
+    # 3. Tenta pegar lat/lon da própria linha da tabela de dados
+    lat = buscar_campo_mult(row, ['Latitude', 'LATITUDE', 'Lat'])
+    lon = buscar_campo_mult(row, ['Longitude', 'LONGITUDE', 'Long', 'Lon'])
+    lat_f = converter_coordenada(lat)
+    lon_f = converter_coordenada(lon)
+    if lat_f is not None and lon_f is not None:
+        return f"https://www.google.com/maps/search/?api=1&query={lat_f},{lon_f}"
+
+    # 4. Tenta extrair URL de alguma coluna de link da própria aba (caso haja)
+    link_direto = buscar_campo_mult(row, ['Geolocalização', 'Geolocalizacao', 'Link Maps', 'Google Maps', 'Maps', 'Localização'])
+    url_pura = extrair_url_pura(link_direto)
+    if url_pura:
+        return url_pura
 
     return None
 
@@ -294,7 +276,7 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(5)
     
-    # --- 1. CAPTAÇÃO E EEAB ---
+    # 1. CAPTAÇÃO E EEAB
     if not df_c.empty or not df_e.empty:
         pdf.set_font("Helvetica", "B", 11)
         pdf.cell(0, 7, "1. DADOS DA CAPTACAO SUPERFICIAL E ADUTORAS/EEAB", ln=True)
@@ -381,7 +363,7 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
             pdf.ln(2)
         pdf.ln(3)
 
-    # --- 2. ETA ---
+    # 2. ETA
     if not df_e.empty:
         pdf.set_font("Helvetica", "B", 11)
         pdf.cell(0, 7, "2. ESTACAO DE TRATAMENTO DE AGUA (ETA)", ln=True)
@@ -423,7 +405,7 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
             pdf.ln(2)
         pdf.ln(3)
 
-    # --- 3. ADUTORAS DE INTERLIGAÇÃO (SE HOUVER) ---
+    # 3. ADUTORAS DE INTERLIGAÇÃO
     if not df_a.empty:
         c_origem, c_destino = 'Município Origem', 'Município Destino'
         dados_adu_pdf = df_a[(df_a[c_origem].astype(str).str.strip().str.upper() == mun_limpo) | 
@@ -437,7 +419,7 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
                 pdf.cell(0, 5.5, f"Origem: {limpar_acentos(r_a[c_origem])} -> Destino: {limpar_acentos(r_a[c_destino])} | Diametro: {diam} mm", ln=True)
             pdf.ln(3)
 
-    # --- 4. POÇOS ---
+    # 4. POÇOS
     if not df_p.empty:
         pdf.set_font("Helvetica", "B", 11)
         pdf.cell(0, 7, "4. SISTEMA DE POCOS ARTESIANOS (SUBTERRANEO)", ln=True)
@@ -635,10 +617,10 @@ try:
                         if dado_valido(comp): txt_adu += f" | Comprimento: {comp} m"
                         st.write(txt_adu)
 
-                    # Botão Google Maps Estilizado
+                    # Link discreto e limpo para o Google Maps
                     link_maps_cap = obter_link_gmaps(row, df_geo=dados_geo, tipo_busca='cap')
                     if link_maps_cap:
-                        st.markdown(f"<a href='{link_maps_cap}' target='_blank' class='btn-maps'>📍 Ver no Google Maps</a>", unsafe_allow_html=True)
+                        st.markdown(f"<a href='{link_maps_cap}' target='_blank' class='link-maps-discreto'>📍 Ver no Google Maps</a>", unsafe_allow_html=True)
 
                     obs_c = buscar_campo_mult(row, ['OBSERVAÇÕES', 'Observações', 'Obs', 'OBS'])
                     if dado_valido(obs_c): st.info(f"**Obs:** {obs_c}")
@@ -706,10 +688,10 @@ try:
                     prod_chem = buscar_campo_mult(row, ['Produto Químico Principal', 'Produto Quimico Principal'])
                     if dado_valido(prod_chem): st.write(f"**Produtos Químicos:** {prod_chem}")
 
-                    # Botão Google Maps Estilizado
+                    # Link discreto e limpo para o Google Maps
                     link_maps_eta = obter_link_gmaps(row, df_geo=dados_geo, tipo_busca='eta')
                     if link_maps_eta:
-                        st.markdown(f"<a href='{link_maps_eta}' target='_blank' class='btn-maps'>📍 Ver no Google Maps</a>", unsafe_allow_html=True)
+                        st.markdown(f"<a href='{link_maps_eta}' target='_blank' class='link-maps-discreto'>📍 Ver no Google Maps</a>", unsafe_allow_html=True)
 
                     obs_e = buscar_campo_mult(row, ['OBSERVAÇÕES', 'Observações', 'Obs', 'OBS'])
                     if dado_valido(obs_e): st.info(f"**Obs:** {obs_e}")
@@ -758,10 +740,10 @@ try:
                 if dado_valido(alt_b): st.write(f"**Altura da Bomba:** {alt_b} mca")
                 if dado_valido(vaz_b): st.write(f"**Vazão Cadastrada:** {vaz_b} m³/h")
 
-                # Botão Google Maps Estilizado
+                # Link discreto e limpo para o Google Maps
                 link_maps_p = obter_link_gmaps(row, df_geo=dados_geo, tipo_busca='poc')
                 if link_maps_p:
-                    st.markdown(f"<a href='{link_maps_p}' target='_blank' class='btn-maps'>📍 Ver no Google Maps</a>", unsafe_allow_html=True)
+                    st.markdown(f"<a href='{link_maps_p}' target='_blank' class='link-maps-discreto'>📍 Ver no Google Maps</a>", unsafe_allow_html=True)
 
                 # Galeria Fotos Poço
                 fotos_poc = extrair_lista_fotos(row, "poc")
