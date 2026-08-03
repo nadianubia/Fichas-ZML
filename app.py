@@ -208,11 +208,11 @@ def obter_link_gmaps(row, df_geo=None):
     lon_f = converter_coordenada(lon)
     
     if (lat_f is None or lon_f is None) and df_geo is not None and not df_geo.empty:
-        id_nome = buscar_campo_mult(row, ['Identificação do Poço', 'Poço', 'Unidade', 'Localidade'])
+        id_nome = buscar_campo_mult(row, ['Identificação do Poço', 'Poço', 'Unidade', 'Localidade', 'Sistema'])
         if id_nome:
             id_norm = limpar_acentos(id_nome).upper().strip()
             for _, r_g in df_geo.iterrows():
-                nome_geo = buscar_campo_mult(r_g, ['Unidade', 'UNIDADE', 'Descrição', 'Descricao', 'Estrutura', 'Nome'])
+                nome_geo = buscar_campo_mult(r_g, ['Unidade', 'UNIDADE', 'Descrição', 'Descricao', 'Estrutura', 'Nome', 'Localidade'])
                 if nome_geo and (limpar_acentos(nome_geo).upper().strip() in id_norm or id_norm in limpar_acentos(nome_geo).upper().strip()):
                     lat_f = converter_coordenada(buscar_campo_mult(r_g, ['Latitude', 'LATITUDE', 'Lat']))
                     lon_f = converter_coordenada(buscar_campo_mult(r_g, ['Longitude', 'LONGITUDE', 'Long', 'Lon']))
@@ -592,6 +592,17 @@ try:
                         if dado_valido(comp): txt_adu += f" | Comprimento: {comp} m"
                         st.write(txt_adu)
 
+                    # Link MAPS da Captação/EEAB
+                    link_maps_cap = obter_link_gmaps(row, df_geo=dados_geo)
+                    if link_maps_cap:
+                        st.markdown(
+                            f"""<a href='{link_maps_cap}' target='_blank' class='link-gmaps-container'>
+                                {MAP_PIN_RED_SVG}
+                                <span class='link-gmaps-text'>MAPS</span>
+                            </a>""", 
+                            unsafe_allow_html=True
+                        )
+
                     obs_c = buscar_campo_mult(row, ['OBSERVAÇÕES', 'Observações', 'Obs', 'OBS'])
                     if dado_valido(obs_c): st.info(f"**Obs:** {obs_c}")
 
@@ -659,6 +670,17 @@ try:
                     prod_chem = buscar_campo_mult(row, ['Produto Químico Principal', 'Produto Quimico Principal'])
                     if dado_valido(prod_chem): st.write(f"**Produtos Químicos:** {prod_chem}")
 
+                    # Link MAPS da ETA
+                    link_maps_eta = obter_link_gmaps(row, df_geo=dados_geo)
+                    if link_maps_eta:
+                        st.markdown(
+                            f"""<a href='{link_maps_eta}' target='_blank' class='link-gmaps-container'>
+                                {MAP_PIN_RED_SVG}
+                                <span class='link-gmaps-text'>MAPS</span>
+                            </a>""", 
+                            unsafe_allow_html=True
+                        )
+
                     obs_e = buscar_campo_mult(row, ['OBSERVAÇÕES', 'Observações', 'Obs', 'OBS'])
                     if dado_valido(obs_e): st.info(f"**Obs:** {obs_e}")
 
@@ -713,7 +735,7 @@ try:
                     st.markdown(
                         f"""<a href='{link_maps_p}' target='_blank' class='link-gmaps-container'>
                             {MAP_PIN_RED_SVG}
-                            <span class='link-gmaps-text'>Abrir Localização no Maps</span>
+                            <span class='link-gmaps-text'>MAPS</span>
                         </a>""", 
                         unsafe_allow_html=True
                     )
