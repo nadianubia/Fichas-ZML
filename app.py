@@ -14,7 +14,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# Estilização CSS
+# Estilização CSS Ajustada
 st.markdown("""
     <style>
     .block-container { padding-top: 4rem; }
@@ -52,6 +52,29 @@ st.markdown("""
         box-shadow: 2px 2px 5px rgba(0,0,0,0.05);
     }
     .card-title { color: #1F4E79; font-weight: bold; margin-bottom: 12px; font-size: 1.15rem; }
+
+    /* Botão elegante para o Google Maps */
+    .btn-maps {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background-color: #e8f4fd;
+        color: #1F4E79 !important;
+        padding: 6px 12px;
+        border-radius: 6px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        text-decoration: none !important;
+        border: 1px solid #bee3f8;
+        margin-top: 8px;
+        margin-bottom: 8px;
+        transition: all 0.2s ease;
+    }
+    .btn-maps:hover {
+        background-color: #1F4E79;
+        color: #ffffff !important;
+        border-color: #1F4E79;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -176,7 +199,6 @@ def converter_coordenada(val):
 
 def obter_link_gmaps(row, df_geo=None, tipo_busca=None):
     """Busca ou constrói o link do Google Maps para uma linha específica (Poço, Captação, ETA)"""
-    # 1. Tenta obter link direto de localização se existir na linha
     link_direto = buscar_campo_mult(row, [
         'Geolocalização', 'Geolocalizacao', 'Link Maps', 'Google Maps', 'Maps',
         'Localização ETA', 'Localizacao ETA', 'Localização Captação', 'Localizacao Captacao',
@@ -196,7 +218,6 @@ def obter_link_gmaps(row, df_geo=None, tipo_busca=None):
     if lat_f is not None and lon_f is not None:
         return f"https://www.google.com/maps/search/?api=1&query={lat_f},{lon_f}"
 
-    # 2. Busca na aba GEOLOCALIZACAO caso não esteja na própria linha
     if df_geo is not None and not df_geo.empty:
         id_nome = buscar_campo_mult(row, ['Identificação do Poço', 'Poço', 'Unidade', 'Localidade', 'Sistema'])
         id_norm = limpar_acentos(id_nome).upper().strip() if id_nome else ""
@@ -402,10 +423,24 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
             pdf.ln(2)
         pdf.ln(3)
 
-    # --- 3. POÇOS ---
+    # --- 3. ADUTORAS DE INTERLIGAÇÃO (SE HOUVER) ---
+    if not df_a.empty:
+        c_origem, c_destino = 'Município Origem', 'Município Destino'
+        dados_adu_pdf = df_a[(df_a[c_origem].astype(str).str.strip().str.upper() == mun_limpo) | 
+                             (df_a[c_destino].astype(str).str.strip().str.upper() == mun_limpo)] if c_origem in df_a.columns else pd.DataFrame()
+        if not dados_adu_pdf.empty:
+            pdf.set_font("Helvetica", "B", 11)
+            pdf.cell(0, 7, "3. SISTEMAS INTERLIGADOS / ADUTORAS DE EXPORTACAO", ln=True)
+            pdf.set_font("Helvetica", "", 10)
+            for _, r_a in dados_adu_pdf.iterrows():
+                diam = formatar_valor(buscar_campo_mult(r_a, ['Diâmetro da Adutora (mm)']) or '—')
+                pdf.cell(0, 5.5, f"Origem: {limpar_acentos(r_a[c_origem])} -> Destino: {limpar_acentos(r_a[c_destino])} | Diametro: {diam} mm", ln=True)
+            pdf.ln(3)
+
+    # --- 4. POÇOS ---
     if not df_p.empty:
         pdf.set_font("Helvetica", "B", 11)
-        pdf.cell(0, 7, "3. SISTEMA DE POCOS ARTESIANOS (SUBTERRANEO)", ln=True)
+        pdf.cell(0, 7, "4. SISTEMA DE POCOS ARTESIANOS (SUBTERRANEO)", ln=True)
         for _, row in df_p.iterrows():
             if pdf.get_y() > 230:
                 pdf.add_page()
@@ -453,6 +488,7 @@ def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
             
     return pdf.output()
 
+# --- EXECUÇÃO DA APLICAÇÃO STREAMLIT ---
 try:
     df_captacao, df_eta_eeab, df_pocos, df_adutoras, df_geolocalizacao = carregar_dados()
     
@@ -599,10 +635,10 @@ try:
                         if dado_valido(comp): txt_adu += f" | Comprimento: {comp} m"
                         st.write(txt_adu)
 
-                    # Link discreto e limpo do Google Maps
+                    # Botão Google Maps Estilizado
                     link_maps_cap = obter_link_gmaps(row, df_geo=dados_geo, tipo_busca='cap')
                     if link_maps_cap:
-                        st.markdown(f"📍 [Ver no Google Maps]({link_maps_cap})")
+                        st.markdown(f"<a href='{link_maps_cap}' target='_blank' class='btn-maps'>📍 Ver no Google Maps</a>", unsafe_allow_html=True)
 
                     obs_c = buscar_campo_mult(row, ['OBSERVAÇÕES', 'Observações', 'Obs', 'OBS'])
                     if dado_valido(obs_c): st.info(f"**Obs:** {obs_c}")
@@ -611,7 +647,6 @@ try:
                     fotos_cap = extrair_lista_fotos(row, "cap")
                     exibir_galeria_fotos(fotos_cap, legenda_base="Captação/EEAB")
 
-                    st.markdown("---")
                 st.markdown("</div>", unsafe_allow_html=True)
 
         # --- CARD ESTAÇÃO DE TRATAMENTO DE ÁGUA (ETA) ---
@@ -671,10 +706,10 @@ try:
                     prod_chem = buscar_campo_mult(row, ['Produto Químico Principal', 'Produto Quimico Principal'])
                     if dado_valido(prod_chem): st.write(f"**Produtos Químicos:** {prod_chem}")
 
-                    # Link discreto e limpo do Google Maps
+                    # Botão Google Maps Estilizado
                     link_maps_eta = obter_link_gmaps(row, df_geo=dados_geo, tipo_busca='eta')
                     if link_maps_eta:
-                        st.markdown(f"📍 [Ver no Google Maps]({link_maps_eta})")
+                        st.markdown(f"<a href='{link_maps_eta}' target='_blank' class='btn-maps'>📍 Ver no Google Maps</a>", unsafe_allow_html=True)
 
                     obs_e = buscar_campo_mult(row, ['OBSERVAÇÕES', 'Observações', 'Obs', 'OBS'])
                     if dado_valido(obs_e): st.info(f"**Obs:** {obs_e}")
@@ -683,7 +718,6 @@ try:
                     fotos_eta = extrair_lista_fotos(row, "eta")
                     exibir_galeria_fotos(fotos_eta, legenda_base="ETA")
 
-                    st.markdown("---")
                 st.markdown("</div>", unsafe_allow_html=True)
 
     # 2. Seção de Adutoras Interligadas
@@ -724,10 +758,10 @@ try:
                 if dado_valido(alt_b): st.write(f"**Altura da Bomba:** {alt_b} mca")
                 if dado_valido(vaz_b): st.write(f"**Vazão Cadastrada:** {vaz_b} m³/h")
 
-                # Link discreto e limpo do Google Maps
+                # Botão Google Maps Estilizado
                 link_maps_p = obter_link_gmaps(row, df_geo=dados_geo, tipo_busca='poc')
                 if link_maps_p:
-                    st.markdown(f"📍 [Ver no Google Maps]({link_maps_p})")
+                    st.markdown(f"<a href='{link_maps_p}' target='_blank' class='btn-maps'>📍 Ver no Google Maps</a>", unsafe_allow_html=True)
 
                 # Galeria Fotos Poço
                 fotos_poc = extrair_lista_fotos(row, "poc")
