@@ -3,4 +3,5 @@ pandas
 fpdf2
 gspread
 google-auth
-streamlit
+oauth2client
+plotly
