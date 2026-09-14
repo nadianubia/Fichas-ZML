@@ -1359,90 +1359,114 @@ elif aba_selecionada == "Consultar Histórico":
                                 st.markdown("---")
 
 
-                                # ------------------------------------------
-                                # 2. TABELA DE DETECÇÃO DE TRANSBORDOS
-                                # ------------------------------------------
-                                st.subheader("🚨 Tabela de Transbordos Detectados")
+# ------------------------------------------
+# 2. TABELA DE DETECÇÃO DE TRANSBORDOS
+# ------------------------------------------
+st.subheader("🚨 Tabela de Transbordos Detectados")
 
+# Limites por cidade (em metros)
+LIMITES_TRANSBORDO = {
+    "Colônia Leopoldina": 3.30,
+    "Capela": 4.09,
+    "Novo Lino": 4.30,
+}
 
-                                df_transbordo = df_v_plot.sort_values("Data e Hora").copy()
-                                # Considera em transbordo se a vazão ultrapassar o teto cadastrado
-                                df_transbordo["em_transbordo"] = df_transbordo["Vazão (m³/h)"] > teto_limite
-                                df_transbordo["grupo"] = (df_transbordo["em_transbordo"] != df_transbordo["em_transbordo"].shift()).cumsum()
+# Teto máximo físico plausível (qualquer valor > 5m é ruído da telemetria)
+LIMITE_MAXIMO_FISICO = 5.0 
 
+df_base = df_n_filtrado.copy() if "df_n_filtrado" in locals() and not df_n_filtrado.empty else None
+cidade_atual = None
 
-                                eventos_transbordo = []
-                                for _, grupo in df_transbordo[df_transbordo["em_transbordo"]].groupby("grupo"):
-                                    dt_inicio = grupo["Data e Hora"].min()
-                                    dt_fim = grupo["Data e Hora"].max()
-                                    duracao_seg = (dt_fim - dt_inicio).total_seconds()
-                                    duracao_horas = duracao_seg / 3600.0
+# 1. Identificação precisa do local selecionado
+if df_base is not None:
+    # Varre os valores e nomes de colunas do DF ativo buscando a palavra-chave da cidade
+    conteudo_texto = " ".join(df_base.columns.astype(str)).lower()
+    for col in df_base.select_dtypes(include=["object", "string"]).columns:
+        conteudo_texto += " " + " ".join(df_base[col].dropna().astype(str).unique()).lower()
 
+    for cidade in LIMITES_TRANSBORDO.keys():
+        if cidade.lower() in conteudo_texto:
+            cidade_atual = cidade
+            break
 
-                                    # Transbordos a partir de 1 minuto
-                                    if duracao_seg >= 60:
-                                        dia_evento = dt_inicio.date()
-                                        vazoes_do_dia = df_v_plot[
-                                            (df_v_plot["Data e Hora"].dt.date == dia_evento) &
-                                            (df_v_plot["Vazão (m³/h)"] <= teto_limite)
-                                        ]["Vazão (m³/h)"]
+# 2. Processamento do Transbordo
+if cidade_atual and df_base is not None:
+    teto_limite = LIMITES_TRANSBORDO[cidade_atual]
 
+    # Identifica a coluna numérica do NÍVEL
+    colunas_numericas = df_base.select_dtypes(include=["number"]).columns.tolist()
+    col_nivel = None
+    for col in colunas_numericas:
+        if any(termo in col.lower() for termo in ["nível", "nivel", "cota"]):
+            col_nivel = col
+            break
+    if not col_nivel and colunas_numericas:
+        col_nivel = colunas_numericas[0]
 
-                                        vazao_media_dia = vazoes_do_dia.mean() if not vazoes_do_dia.empty else 0.0
-                                        vol_transbordado = vazao_media_dia * duracao_horas
+    if col_nivel:
+        df_transbordo = df_base.sort_values("Data e Hora").copy()
+        df_transbordo[col_nivel] = pd.to_numeric(df_transbordo[col_nivel], errors="coerce")
 
+        # CONDICIONAL: Transbordo real entre o limite (ex: 4.09m) e o teto máximo (5.00m)
+        df_transbordo["em_transbordo"] = (
+            (df_transbordo[col_nivel] > teto_limite) & 
+            (df_transbordo[col_nivel] <= LIMITE_MAXIMO_FISICO)
+        )
 
-                                        eventos_transbordo.append({
-                                            "Início do Transbordo": dt_inicio.strftime("%d/%m/%Y %H:%M:%S"),
-                                            "Fim do Transbordo": dt_fim.strftime("%d/%m/%Y %H:%M:%S"),
-                                            "Duração": f"{int(duracao_seg // 60)} min",
-                                            "Vazão Média do Dia (m³/h)": round(vazao_media_dia, 2),
-                                            "Vol. Transbordado (m³)": round(vol_transbordado, 2)
-                                        })
+        df_transbordo["grupo"] = (
+            df_transbordo["em_transbordo"] != df_transbordo["em_transbordo"].shift()
+        ).cumsum()
 
+        eventos_transbordo = []
+        for _, grupo in df_transbordo[df_transbordo["em_transbordo"]].groupby("grupo"):
+            dt_inicio = grupo["Data e Hora"].min()
+            dt_fim = grupo["Data e Hora"].max()
+            duracao_seg = (dt_fim - dt_inicio).total_seconds()
+            duracao_horas = duracao_seg / 3600.0
 
-                                if eventos_transbordo:
-                                    df_tb_transbordo = pd.DataFrame(eventos_transbordo)
-                                    total_vol_transbordo = df_tb_transbordo["Vol. Transbordado (m³)"].sum()
-                                    total_eventos_trans = len(df_tb_transbordo)
+            if duracao_seg >= 60:
+                dia_evento = dt_inicio.date()
+                
+                vazao_media_dia = 0.0
+                if "df_v_plot" in locals() and not df_v_plot.empty and "Vazão (m³/h)" in df_v_plot.columns:
+                    vazoes_do_dia = df_v_plot[
+                        (df_v_plot["Data e Hora"].dt.date == dia_evento)
+                    ]["Vazão (m³/h)"]
+                    vazao_media_dia = vazoes_do_dia.mean() if not vazoes_do_dia.empty else 0.0
 
+                vol_transbordado = vazao_media_dia * duracao_horas
 
-                                    t_col1, t_col2 = st.columns(2)
-                                    t_col1.metric("Total de Ocorrências de Transbordo", f"{total_eventos_trans} eventos")
-                                    t_col2.metric("Volume Total Transbordado", f"{total_vol_transbordo:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " m³")
+                eventos_transbordo.append({
+                    "Início do Transbordo": dt_inicio.strftime("%d/%m/%Y %H:%M:%S"),
+                    "Fim do Transbordo": dt_fim.strftime("%d/%m/%Y %H:%M:%S"),
+                    "Duração": f"{int(duracao_seg // 60)} min",
+                    "Nível Máximo (m)": round(grupo[col_nivel].max(), 2),
+                    "Vazão Média do Dia (m³/h)": round(vazao_media_dia, 2),
+                    "Vol. Transbordado (m³)": round(vol_transbordado, 2),
+                })
 
+        if eventos_transbordo:
+            df_tb_transbordo = pd.DataFrame(eventos_transbordo)
+            total_vol_transbordo = df_tb_transbordo["Vol. Transbordado (m³)"].sum()
+            total_eventos_trans = len(df_tb_transbordo)
 
-                                    linha_total_trans = pd.DataFrame([{
-                                        "Início do Transbordo": "TOTAL DO PERÍODO",
-                                        "Fim do Transbordo": "-",
-                                        "Duração": "-",
-                                        "Vazão Média do Dia (m³/h)": "",
-                                        "Vol. Transbordado (m³)": round(total_vol_transbordo, 2)
-                                    }])
-
-
-                                    df_exibir_trans = pd.concat([df_tb_transbordo, linha_total_trans], ignore_index=True)
-                                    st.dataframe(df_exibir_trans, use_container_width=True, hide_index=True)
-                                else:
-                                    st.info("Nenhum evento de transbordo (acima do teto limite definido) foi identificado no período.")
-
-
-                        else:
-                            st.warning("Nenhum registro de nível localizado para o período selecionado.")
-
-
-                        with st.expander("Ver tabela de dados brutos de nível do período"):
-                            st.dataframe(
-                                df_n_filtrado,
-                                use_container_width=True,
-                                hide_index=True,
-                            )
-                else:
-                    st.info(
-                        "Selecione pelo menos um reservatório no campo acima para gerar os gráficos."
-                    )
-        else:
-            st.info(
-                "Aguardando o envio dos novos arquivos para recriação do histórico de níveis."
+            t_col1, t_col2 = st.columns(2)
+            t_col1.metric("Total de Ocorrências de Transbordo", f"{total_eventos_trans} eventos")
+            t_col2.metric(
+                "Volume Total Transbordado",
+                f"{total_vol_transbordo:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " m³"
             )
 
+            linha_total_trans = pd.DataFrame([{
+                "Início do Transbordo": "TOTAL DO PERÍODO",
+                "Fim do Transbordo": "-",
+                "Duração": "-",
+                "Nível Máximo (m)": "-",
+                "Vazão Média do Dia (m³/h)": "",
+                "Vol. Transbordado (m³)": round(total_vol_transbordo, 2),
+            }])
+
+            df_exibir_trans = pd.concat([df_tb_transbordo, linha_total_trans], ignore_index=True)
+            st.dataframe(df_exibir_trans, use_container_width=True, hide_index=True)
+        else:
+            st.info(f"Nenhum evento de transbordo válido (entre {teto_limite:.2f}m e {LIMITE_MAXIMO_FISICO:.2f}m) foi identificado para {cidade_atual} no período.")
