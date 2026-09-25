@@ -1,1230 +1,840 @@
-import datetime
-import os
-import time
-import unicodedata
-import numpy as np
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
 import streamlit as st
-from google.cloud import bigquery
-from google.oauth2 import service_account
-from plotly.subplots import make_subplots
+import pandas as pd
+from fpdf import FPDF
+import os
+import re
+import requests
+from io import BytesIO
+from PIL import Image
 
-#
-# CONFIGURAÇÃO DA PÁGINA E ESTILIZAÇÃO VISUAL
-#
+
+# Configuração da página para modo amplo (wide)
 st.set_page_config(
-    page_title="Painel de Cálculos CCOP CASAL",
-    page_icon="🌊",
-    layout="wide",
-    initial_sidebar_state="expanded",
+    page_title="CASAL - Fichas Técnicas dos Sistemas ZML",
+    page_icon="💧",
+    layout="wide"
 )
 
-# Estilização via CSS na barra lateral
-with st.sidebar:
-    st.markdown("### Filtros")
-    st.markdown(
-        """
-<style>
-[data-testid="stSidebar"] { display: block !important; visibility: visible !important; }
-[data-testid="collapsedControl"] { display: block !important; visibility: visible !important; }
-#MainMenu { visibility: hidden; }
-footer { visibility: hidden; }
-div[data-testid="stStatusWidget"] { display: none !important; }
-</style>
-""",
-        unsafe_allow_html=True,
-    )
 
-#
-# CONSTANTES GLOBAIS E REGRAS DE NEGÓCIO
-#
-CIDADES_PERMITIDAS = [
-    "Campestre",
-    "Colônia Leopoldina",
-    "Ibateguara",
-    "Severo",
-    "Sumidouro",
-    "Jacuípe",
-    "Joaquim Gomes",
-    "Joaq Gomes",
-    "Jundiá",
-    "Novo Lino",
-    "Anadia",
-    "Capela",
-    "Mar Vermelho",
-    "Maribondo",
-    "Paulo Jacinto",
-    "Pindoba",
-    "Taquarana",
-    "Japaratinga",
-    "Maragogi",
-    "Matriz",
-    "Passo",
-    "Porto de Pedras",
-    "Tatuamunha",
-]
+# Estilização CSS Ajustada
+st.markdown("""
+ <style>
+ .block-container { padding-top: 4rem; }
+ 
+ .header-text-container {
+ display: flex;
+ flex-direction: column;
+ justify-content: center;
+ height: 100%;
+ padding-left: 10px;
+ }
+ 
+ .titulo-principal {
+ color: #1F4E79;
+ font-size: 2.3rem;
+ font-weight: bold;
+ margin: 0;
+ padding: 0;
+ line-height: 1.2;
+ }
+ .subtitulo-principal {
+ color: #006699;
+ font-size: 1.3rem;
+ font-weight: bold;
+ margin-top: 8px;
+ padding: 0;  }
+ 
+ .card {
+ background-color: #f8f9fa;
+ padding: 20px;
+ border-radius: 10px;
+ border-left: 5px solid #1F4E79;
+ margin-bottom: 20px;
+ box-shadow: 2px 2px 5px rgba(0,0,0,0.05);
+ }
+ .card-title { color: #1F4E79; font-weight: bold; margin-bottom: 12px; font-size: 1.15rem; }
+ /* Link discreto e pequeno para o Google Maps */
+ .link-maps-discreto {
+ display: inline-block;
+ color: #006699 !important;
+ font-size: 0.85rem;
+ font-weight: 500;
+ text-decoration: underline !important;
+ margin-top: 6px;
+ margin-bottom: 8px;
+ }
+ .link-maps-discreto:hover {
+ color: #1F4E79 !important;
+ }
+ </style>
+""", unsafe_allow_html=True)
 
-PROJECT_ID = "ccop-zml"
-DATASET_ID = f"{PROJECT_ID}.telemetria"
+
+# URL Base Única da Planilha Fichas-ZML
+base_url = "https://docs.google.com/spreadsheets/d/1cUfZoPkVmiOivWXmRK4u3Vlp435f4_DeFzGvTFQOiNw/gviz/tq?tqx=out:csv&sheet="
 
 
-def normalizar_texto(texto):
-    if not isinstance(texto, str):
+LOGO_PATH = None
+for ext in ['png', 'jpg', 'jpeg']:
+    if os.path.exists(f"logo.{ext}"):
+        LOGO_PATH = f"logo.{ext}"
+        break
+
+
+def dado_valido(valor):
+    if pd.isna(valor) or str(valor).strip() == "" or str(valor).strip().lower() == "nan" or str(valor).strip() == "—":
+        return False
+    return True
+
+
+def formatar_valor(valor):
+    if not dado_valido(valor):
         return ""
-    return "".join(
-        c
-        for c in unicodedata.normalize("NFD", texto)
-        if unicodedata.category(c) != "Mn"
-    ).upper().strip()
+    texto = str(valor).strip()
+    if texto.endswith('.0'):
+        return texto[:-2]
+    return texto
 
 
-def filtrar_colunas_indesejadas(df):
-    """
-    Descarta colunas fantasma (Unnamed), Esgoto (EEE/ETE) e
-    cidades/sistemas descontinuados.
-    """
-    if df is None or df.empty:
-        return df
-
-    # 1. Remover colunas vazias ou fantasma (Unnamed)
-    df = df.loc[:, ~df.columns.str.contains("^Unnamed", na=False)]
-
-    # 2. Termos e locais que não devem ir para o BigQuery
-    termos_descarte = [
-        "EEE",
-        "ETE",
-        "ESGOTO",
-        "E.E.E.",
-        "E.T.E.",
-        "BRANQUINHA",
-        "PORTO CALVO",
-        "CHA PRETA",
-        "TAQUARI",
-        "SAO LUIZ DO QUITUNDE",
-        "SAO MIGUEL DOS MILAGRES",
-        "UNIÃO DOS PALMARES",
-    ]
-
-    colunas_para_remover = [
-        col
-        for col in df.columns
-        if any(termo in normalizar_texto(col) for termo in termos_descarte)
-    ]
-
-    if colunas_para_remover:
-        df = df.drop(columns=colunas_para_remover, errors="ignore")
-
-    return df
+def limpar_acentos(texto):
+    if not texto: return ""
+    import unicodedata
+    texto_str = str(texto).strip()
+   
+    # Mapeamento de caracteres incompatíveis com a fonte Helvetica do FPDF
+    substituicoes = {
+        '—': '-', '–': '-', '“': '"', '”': '"', '‘': "'", '’': "'",
+        '•': '*', '…': '...', '³': '3', '²': '2', 'º': 'o', 'ª': 'a'
+    }
+    for orig, dest in substituicoes.items():
+        texto_str = texto_str.replace(orig, dest)
+       
+    return "".join(c for c in unicodedata.normalize('NFD', texto_str) if unicodedata.category(c) != 'Mn')
 
 
-#
-# CONEXÃO COM O GOOGLE BIGQUERY
-#
-@st.cache_resource
-def conectar_bigquery():
-    if not os.path.exists("credentials.json"):
-        st.error(
-            "Erro técnico: Arquivo 'credentials.json' não localizado na raiz do projeto."
-        )
+def buscar_campo_mult(row, lista_colunas):
+    for nome_col in lista_colunas:
+        nome_norm = limpar_acentos(nome_col).upper().strip()
+        for col in row.index:
+            if limpar_acentos(col).upper().strip() == nome_norm:
+                val = row.get(col)
+                if dado_valido(val):
+                    return val
+    return None
+
+
+def formatar_link_drive(url):
+    """Converte links do Google Drive para visualização direta de imagem"""
+    if not dado_valido(url):
+        return None
+    url_str = str(url).strip()
+    match = re.search(r'(?:file/d/|id=)([\w-]+)', url_str)
+    if match:
+        file_id = match.group(1)
+        return f"https://lh3.googleusercontent.com/d/{file_id}"
+    return url_str
+
+
+def extrair_lista_fotos(row, tipo_aba):
+    """Busca dinâmica por colunas de foto (01, 02, 03) independente da aba"""
+    fotos = []
+    opcoes = []
+    if tipo_aba == "cap":
+        opcoes = ["Foto Captação", "Foto Captacao", "Foto"]
+    elif tipo_aba == "eta":
+        opcoes = ["Foto ETA", "Foto"]
+    elif tipo_aba == "poc":
+        opcoes = ["Foto Poco", "Foto Poço", "Foto"]
+   
+    sufixos = ['', ' 01', ' 1', ' 02', ' 2', ' 03', ' 3']
+    for pref in opcoes:
+        for suf in sufixos:
+            nome_col = f"{pref}{suf}"
+            val = buscar_campo_mult(row, [nome_col])
+            if val:
+                link_fmt = formatar_link_drive(val)
+                if link_fmt and link_fmt not in fotos:
+                    fotos.append(link_fmt)
+    return fotos
+
+
+def baixar_imagem_para_pdf(url):
+    """Baixa a imagem da URL e converte para BytesIO compatível com FPDF"""
+    try:
+        response = requests.get(url, timeout=5)
+        if response.status_code == 200:
+            img = Image.open(BytesIO(response.content))
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            img_byte_arr = BytesIO()
+            img.save(img_byte_arr, format='JPEG')
+            img_byte_arr.seek(0)
+            return img_byte_arr
+    except Exception:
+        pass
+    return None
+
+
+def exibir_galeria_fotos(fotos, legenda_base="Foto"):
+    """Exibe fotos em colunas lado a lado no card"""
+    if not fotos:
+        return
+    st.markdown("<div style='margin-top: 15px;'><b>📷 Registros Fotográficos:</b></div>", unsafe_allow_html=True)
+    cols = st.columns(len(fotos))
+    for idx, (col, url_foto) in enumerate(zip(cols, fotos)):
+        with col:
+            try:
+                st.image(url_foto, caption=f"{legenda_base} ({idx+1})", use_container_width=True)
+            except Exception:
+                st.markdown(f"[Abrir {legenda_base} ({idx+1})]({url_foto})")
+
+
+def converter_coordenada(val):
+    if not dado_valido(val):
         return None
     try:
-        creds = service_account.Credentials.from_service_account_file(
-            "credentials.json"
-        )
-        client = bigquery.Client(credentials=creds, project=PROJECT_ID)
-        return client
-    except Exception as e:
-        st.error(f"Erro ao conectar ao BigQuery: {e}")
+        texto = str(val).strip().replace(',', '.')
+        match = re.search(r'[+]?\d*\.\d+|\d+', texto)
+        if match:
+            num = float(match.group())
+            if "S" in texto.upper() or "W" in texto.upper() or "O" in texto.upper():
+                num = -abs(num)
+            elif num > 0 and num < 40:
+                num = -num
+            return num
+    except:
+        return None
+    return None
+
+
+def obter_link_gmaps(row, df_geo=None, tipo_busca=None):
+    """Busca o link limpo do Maps priorizando a aba GEOLOCALIZACAO ou extraindo URLs limpas"""
+   
+    def extrair_url_pura(val):
+        if not dado_valido(val):
+            return None
+        texto = str(val).strip()
+        match = re.search(r'https?://[^\s\'"]+', texto)
+        if match:
+            return match.group(0)
         return None
 
 
-client = conectar_bigquery()
+    # 1. Identificador da estrutura nesta linha
+    id_nome = buscar_campo_mult(row, ['Identificação do Poço', 'Poço', 'Unidade', 'Localidade', 'Sistema', 'Captação - Tipo'])
+    id_norm = limpar_acentos(id_nome).upper().strip() if id_nome else ""
 
-#
-# BARRA LATERAL (SIDEBAR)
-#
-formatos_logo = ["logo.png", "logo.png.png", "logo.jpg", "logo.jpeg", "LOGO.PNG"]
-caminho_logo = next((f for f in formatos_logo if os.path.exists(f)), None)
 
-if caminho_logo:
-    st.sidebar.image(caminho_logo, use_container_width=True)
+    # 2. Busca na aba GEOLOCALIZACAO
+    if df_geo is not None and not df_geo.empty:
+        for _, r_g in df_geo.iterrows():
+            unid_geo = buscar_campo_mult(r_g, ['Unidade', 'UNIDADE', 'Descrição', 'Descricao'])
+            unid_geo_norm = limpar_acentos(unid_geo).upper().strip() if unid_geo else ""
 
-st.sidebar.markdown("---")
-st.sidebar.title("Navegação")
-aba_selecionada = st.sidebar.radio(
-    "Escolha a tela:", ["Importar e Enviar Tudo", "Consultar Histórico"]
-)
 
-st.title("Painel de Cálculos Diários")
-st.markdown("### *Gestão e Telemetria Integrada de Sistemas e ETAS*")
-st.write("")
+            if id_norm and (id_norm in unid_geo_norm or unid_geo_norm in id_norm):
+                lat_g = converter_coordenada(buscar_campo_mult(r_g, ['Latitude', 'LATITUDE', 'Lat']))
+                lon_g = converter_coordenada(buscar_campo_mult(r_g, ['Longitude', 'LONGITUDE', 'Long', 'Lon']))
+                if lat_g is not None and lon_g is not None:
+                    return f"https://www.google.com/maps/search/?api=1&query={lat_g},{lon_g}"
 
-#
-# TELA 1: IMPORTAR E ENVIAR TUDO
-#
-if aba_selecionada == "Importar e Enviar Tudo":
-    st.subheader("Carregar Planilhas de Telemetria para a Nuvem (BigQuery)")
-    up_col1, up_col2 = st.columns(2)
 
-    with up_col1:
-        st.markdown("#### Macromedição")
-        uploaded_file = st.file_uploader(
-            "Arraste aqui o arquivo CSV de Vazões/Totalizadores",
-            type=["csv"],
-            key="macro_file",
-        )
+    # 3. Lat/Lon da própria linha
+    lat = buscar_campo_mult(row, ['Latitude', 'LATITUDE', 'Lat'])
+    lon = buscar_campo_mult(row, ['Longitude', 'LONGITUDE', 'Long', 'Lon'])
+    lat_f = converter_coordenada(lat)
+    lon_f = converter_coordenada(lon)
+    if lat_f is not None and lon_f is not None:
+        return f"https://www.google.com/maps/search/?api=1&query={lat_f},{lon_f}"
 
-    with up_col2:
-        st.markdown("#### Níveis dos Reservatórios")
-        uploaded_niveis_lista = st.file_uploader(
-            "Arraste aqui os arquivos CSV de Níveis (Multi-polos permitidos)",
-            type=["csv"],
-            accept_multiple_files=True,
-            key="nivel_file",
-        )
 
-    df_macro_pronto = None
-    df_nivel_pronto = None
-    colunas_vazao = []
+    # 4. Extrair URL direta
+    link_direto = buscar_campo_mult(row, ['Geolocalização', 'Geolocalizacao', 'Link Maps', 'Google Maps', 'Maps', 'Localização'])
+    url_pura = extrair_url_pura(link_direto)
+    if url_pura:
+        return url_pura
+    return None
 
-    if uploaded_file is not None:
-        try:
-            df_macro_pronto = pd.read_csv(
-                uploaded_file, sep=";", decimal=",", encoding="latin1"
-            )
-            df_macro_pronto.columns = df_macro_pronto.columns.str.strip()
-            df_macro_pronto = filtrar_colunas_indesejadas(df_macro_pronto)
 
-            df_macro_pronto["Data e Hora"] = (
-                pd.to_datetime(
-                    df_macro_pronto["Data e Hora"],
-                    format="%Y-%m-%d %H:%M:%S",
-                    errors="coerce",
-                )
-                .fillna(
-                    pd.to_datetime(
-                        df_macro_pronto["Data e Hora"],
-                        format="%d/%m/%Y %H:%M:%S",
-                        errors="coerce",
-                    )
-                )
-                .fillna(
-                    pd.to_datetime(
-                        df_macro_pronto["Data e Hora"],
-                        format="%Y/%m/%d %H:%M:%S",
-                        errors="coerce",
-                    )
-                )
-            )
+@st.cache_data(ttl=60)
+def carregar_dados():
+    try: df_cap = pd.read_csv(base_url + "DADOS_CAPTACAO")
+    except: df_cap = pd.DataFrame()
+    try: df_eta = pd.read_csv(base_url + "DADOS_ETA_EEAB")
+    except: df_eta = pd.DataFrame()
+    try: df_poc = pd.read_csv(base_url + "DADOS_POCOS")
+    except: df_poc = pd.DataFrame()
+    try: df_adu = pd.read_csv(base_url + "ADUTORAS_INTERLIGACAO")
+    except: df_adu = pd.DataFrame()
+    try: df_geo = pd.read_csv(base_url + "GEOLOCALIZACAO")
+    except: df_geo = pd.DataFrame()
+    return df_cap, df_eta, df_poc, df_adu, df_geo
 
-            df_macro_pronto = df_macro_pronto.dropna(subset=["Data e Hora"])
-            colunas_vazao = [
-                col
-                for col in df_macro_pronto.columns
-                if "VAZAO" in normalizar_texto(col)
-            ]
 
-            if colunas_vazao:
-                st.success(
-                    f"Macromedição: Identificados {len(colunas_vazao)} sistemas de vazão prontos para envio!"
-                )
-            else:
-                st.warning(
-                    "Arquivo carregado, mas nenhuma coluna válida contendo 'VAZÃO' foi identificada."
-                )
-        except Exception as e:
-            st.error(f"Erro ao ler arquivo de macromedição: {e}")
+# GERADOR DE PDF
+def gerar_pdf_ficha(municipio, df_c, df_e, df_p, df_a):
+    pdf = FPDF()
+    pdf.add_page()
+    mun_limpo = limpar_acentos(municipio).upper()
+   
+    if LOGO_PATH:
+        pdf.image(LOGO_PATH, x=10, y=10, w=30)
+        pdf.set_y(12)
+        pdf.set_x(45)
+        pdf.set_font("Helvetica", "B", 13)
+        pdf.cell(0, 7, "CASAL - COMPANHIA DE SANEAMENTO DE ALAGOAS", ln=True)
+        pdf.set_x(45)
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.cell(0, 7, f"FICHA TECNICA DOS SISTEMAS ZML: {mun_limpo}", ln=True)
+    else:
+        pdf.set_font("Helvetica", "B", 14)
+        pdf.cell(0, 10, "CASAL - COMPANHIA DE SANEAMENTO DE ALAGOAS", ln=True, align="C")
+        pdf.cell(0, 10, f"FICHA TECNICA DOS SISTEMAS ZML: {mun_limpo}", ln=True, align="C")
+ 
+    pdf.ln(12)
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(5)
+ 
+    # 1. CAPTAÇÃO E EEAB
+    if not df_c.empty or not df_e.empty:
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.cell(0, 7, "1. DADOS DA CAPTACAO SUPERFICIAL E ADUTORAS/EEAB", ln=True)
+        pdf.set_font("Helvetica", "", 10)
+ 
+        cc_eeab_val = ""
+        if not df_e.empty:
+            for _, r_e in df_e.iterrows():
+                cc_eeab_val = formatar_valor(buscar_campo_mult(r_e, ['CC Equatorial EEAB', 'CC EEAB']))
+                if cc_eeab_val: break
+               
+        for _, row in df_c.iterrows():
+            loc = buscar_campo_mult(row, ['Localidade'])
+            tipo = buscar_campo_mult(row, ['Captação - Tipo', 'Tipo de Captação'])
+            vaz = formatar_valor(buscar_campo_mult(row, ['EEAB - Vazão Principal (m³/h)', 'EEAB - Vazão Principal (m3/h)', 'Vazão Principal', 'Vazão']))
+            pot = formatar_valor(buscar_campo_mult(row, ['EEAB - Potência Principal (cv)', 'EEAB - Potencia Principal (cv)', 'Potência Principal']))
+            alt = formatar_valor(buscar_campo_mult(row, ['EEAB - Altura Manométrica Principal (mca)', 'EEAB - Altura Manometrica Principal (mca)']))
+ 
+            bomba_res = buscar_campo_mult(row, ['EEAB - Possui Bomba Reserva', 'EAB - Possui Bomba Reserva', 'Possui Bomba Reserva'])
+            tipo_res = buscar_campo_mult(row, ['EEAB - Tipo da Bomba Reserva', 'EAB - Tipo da Bomba Reserva', 'Tipo da Bomba Reserva'])
+            pot_res = formatar_valor(buscar_campo_mult(row, ['EEAB - Potência Reserva (cv)', 'EEAB - Potencia Reserva (cv)', 'EAB - Potência Reserva (cv)', 'Potência Reserva']))
+            vaz_res = formatar_valor(buscar_campo_mult(row, ['EEAB - Vazão Reserva (m³/h)', 'EEAB - Vazao Reserva (m3/h)', 'EAB - Vazão Reserva (m³/h)', 'Vazão Reserva']))
+            alt_res = formatar_valor(buscar_campo_mult(row, ['EEAB - Altura Manométrica Reserva (mca)', 'EEAB - Altura Manometrica Reserva (mca)', 'EAB - Altura Manométrica Reserva (mca)']))
+ 
+            crivo = buscar_campo_mult(row, ['Captação - Possui Crivo', 'Possui Crivo'])
+            mat_crivo = buscar_campo_mult(row, ['Captação - Material Crivo', 'Material Crivo'])
+            diam_crivo = formatar_valor(buscar_campo_mult(row, ['Captação - Diâmetro Crivo (mm)', 'Captação - Diametro Crivo (mm)']))
+            diam_adu = formatar_valor(buscar_campo_mult(row, ['Adutora EEAB até ETA - Diâmetro (mm)', 'Adutora EEAB ate ETA - Diametro (mm)']))
+            comp_adu = formatar_valor(buscar_campo_mult(row, ['Adutora EEAB até ETA - Comprimento (m)', 'Adutora EEAB ate ETA - Comprimento (m)']))
+            mat_adu = buscar_campo_mult(row, ['Adutora EEAB até ETA - Material', 'Adutora EEAB ate ETA - Material'])
+            obs_cap = buscar_campo_mult(row, ['OBSERVAÇÕES', 'Observações', 'Obs', 'OBS'])
 
-    if uploaded_niveis_lista:
-        dfs_polos = []
-        for arquivo_nivel in uploaded_niveis_lista:
-            try:
-                df_n_bruto = pd.read_csv(
-                    arquivo_nivel, sep=";", encoding="latin1"
-                )
-                df_n_bruto.columns = df_n_bruto.columns.str.strip()
-                df_n_bruto = filtrar_colunas_indesejadas(df_n_bruto)
 
-                if "Data e Hora" in df_n_bruto.columns:
-                    df_n_bruto["Data e Hora"] = pd.to_datetime(
-                        df_n_bruto["Data e Hora"],
-                        format="%d/%m/%Y %H:%M:%S",
-                        errors="coerce",
-                    ).fillna(
-                        pd.to_datetime(
-                            df_n_bruto["Data e Hora"],
-                            dayfirst=True,
-                            errors="coerce",
-                        )
-                    )
-                    df_n_bruto = df_n_bruto.dropna(subset=["Data e Hora"])
-                    colunas_validas = ["Data e Hora"] + [
-                        col
-                        for col in df_n_bruto.columns
-                        if col != "Data e Hora"
-                    ]
-                    df_filtrado_tempo = df_n_bruto[colunas_validas].copy()
+            if dado_valido(loc): pdf.cell(0, 5.5, f"Localidade/Sistema: {limpar_acentos(loc)}", ln=True)
+            if dado_valido(cc_eeab_val): pdf.cell(0, 5.5, f"CC Equatorial EEAB: {cc_eeab_val}", ln=True)
+            if dado_valido(tipo): pdf.cell(0, 5.5, f"Tipo de Captacao: {limpar_acentos(tipo)}", ln=True)
+            if dado_valido(vaz): pdf.cell(0, 5.5, f"Vazao Principal EEAB: {vaz} m3/h", ln=True)
+            if dado_valido(pot) or dado_valido(alt): pdf.cell(0, 5.5, f"Bomba Principal: Potencia: {pot} cv | Altura: {alt} mca", ln=True)
+ 
+            if dado_valido(bomba_res):
+                txt_r = f"Bomba Reserva: {limpar_acentos(bomba_res)}"
+                if dado_valido(tipo_res): txt_r += f" ({limpar_acentos(tipo_res)})"
+                if dado_valido(pot_res): txt_r += f" | Potencia: {pot_res} cv"
+                if dado_valido(vaz_res): txt_r += f" | Vazao: {vaz_res} m3/h"
+                if dado_valido(alt_res): txt_r += f" | Altura: {alt_res} mca"
+                pdf.cell(0, 5.5, txt_r, ln=True)
 
-                    for col in df_filtrado_tempo.columns:
-                        if col != "Data e Hora":
-                            df_filtrado_tempo[col] = pd.to_numeric(
-                                df_filtrado_tempo[col]
-                                .astype(str)
-                                .str.replace(",", "."),
-                                errors="coerce",
-                            )
 
-                    df_filtrado_tempo = df_filtrado_tempo.set_index(
-                        "Data e Hora"
-                    )
-                    df_agrupado_10min = (
-                        df_filtrado_tempo.resample("10min")
-                        .mean()
-                        .reset_index()
-                    )
-                    dfs_polos.append(df_agrupado_10min)
-            except Exception as e:
-                st.error(
-                    f"Erro ao processar o arquivo de nível ({arquivo_nivel.name}): {e}"
-                )
+            if dado_valido(crivo):
+                txt_c = f"Possui Crivo: {limpar_acentos(crivo)}"
+                if dado_valido(diam_crivo): txt_c += f" ({diam_crivo} mm)"
+                if dado_valido(mat_crivo): txt_c += f" - {limpar_acentos(mat_crivo)}"
+                pdf.cell(0, 5.5, txt_c, ln=True)
 
-        if dfs_polos:
-            try:
-                df_nivel_pronto = dfs_polos[0]
-                for df_proximo in dfs_polos[1:]:
-                    df_nivel_pronto = pd.merge(
-                        df_nivel_pronto,
-                        df_proximo,
-                        on="Data e Hora",
-                        how="outer",
-                    )
-                df_nivel_pronto = df_nivel_pronto.sort_values(
-                    by="Data e Hora"
-                ).reset_index(drop=True)
-                st.success(
-                    f"Níveis: {len(uploaded_niveis_lista)} arquivo(s) de polos integrados temporariamente!"
-                )
-            except Exception as e:
-                st.error(f"Erro ao unificar as planilhas de níveis: {e}")
 
-    if df_macro_pronto is not None or df_nivel_pronto is not None:
-        st.write("")
-        if st.button(
-            "Salvar Dados Carregados no BigQuery",
-            type="primary",
-            use_container_width=True,
-        ):
-            if not client:
-                st.error("Conexão com o BigQuery indisponível.")
-                st.stop()
+            if dado_valido(diam_adu) or dado_valido(comp_adu):
+                txt_a = "Adutora EEAB -> ETA:"
+                if dado_valido(diam_adu): txt_a += f" Diametro {diam_adu} mm"
+                if dado_valido(mat_adu): txt_a += f" ({limpar_acentos(mat_adu)})"
+                if dado_valido(comp_adu): txt_a += f" | Comprimento: {comp_adu} m"
+                pdf.cell(0, 5.5, txt_a, ln=True)
 
-            # Envio de Macromedição
-            if df_macro_pronto is not None and colunas_vazao:
-                with st.spinner(
-                    "Enviando dados de Macromedição para o BigQuery..."
-                ):
-                    try:
-                        novas_linhas_macro = []
-                        for col_vazao in colunas_vazao:
-                            col_totalizador_esperada = (
-                                col_vazao.replace("VAZÃO", "TOTALIZADOR")
-                                .replace("VAZAO", "TOTALIZADOR")
-                                .replace("(m³/h)", "(m³)")
-                                .replace("(M³/H)", "(M³)")
-                            )
-                            col_tot = (
-                                col_totalizador_esperada
-                                if col_totalizador_esperada
-                                in df_macro_pronto.columns
-                                else None
-                            )
-                            nome_canal = col_vazao.strip()
 
-                            for _, row in df_macro_pronto.iterrows():
-                                v_vazao = pd.to_numeric(
-                                    row[col_vazao], errors="coerce"
-                                )
-                                v_tot = (
-                                    pd.to_numeric(row[col_tot], errors="coerce")
-                                    if col_tot
-                                    else None
-                                )
+            if dado_valido(obs_cap):
+                pdf.multi_cell(0, 5.5, f"Obs: {limpar_acentos(obs_cap)}")
 
-                                novas_linhas_macro.append(
-                                    {
-                                        "data_hora": row["Data e Hora"],
-                                        "sistema_canal": nome_canal,
-                                        "vazao_m3h": (
-                                            float(v_vazao)
-                                            if pd.notna(v_vazao)
-                                            else None
-                                        ),
-                                        "totalizador_m3": (
-                                            float(v_tot)
-                                            if pd.notna(v_tot)
-                                            else None
-                                        ),
-                                    }
-                                )
 
-                        df_bq_vazao = pd.DataFrame(novas_linhas_macro)
-                        table_vazao_id = f"{DATASET_ID}.tb_vazao"
-                        job = client.load_table_from_dataframe(
-                            df_bq_vazao, table_vazao_id
-                        )
-                        job.result()
-                        st.success(
-                            "Macromedição salva com sucesso no BigQuery!"
-                        )
-                    except Exception as e:
-                        st.error(
-                            f"Erro ao salvar macromedição no BigQuery: {e}"
-                        )
+            fotos_cap = extrair_lista_fotos(row, "cap")
+            if fotos_cap:
+                pdf.ln(2)
+                x_start = pdf.get_x()
+                y_pos = pdf.get_y()
+                if y_pos > 220:
+                    pdf.add_page()
+                    y_pos = pdf.get_y()
+               
+                offset_x = 0
+                for idx_f, url_f in enumerate(fotos_cap[:3]):
+                    img_bytes = baixar_imagem_para_pdf(url_f)
+                    if img_bytes:
+                        pdf.image(img_bytes, x=x_start + offset_x, y=y_pos, w=50, h=35)
+                        offset_x += 55
+                if offset_x > 0:
+                    pdf.set_y(y_pos + 38)
+ 
+            pdf.ln(3)
 
-            # Envio de Níveis
-            if df_nivel_pronto is not None:
-                with st.spinner(
-                    "Enviando dados de Níveis para o BigQuery..."
-                ):
-                    try:
-                        df_niveis_longo = df_nivel_pronto.melt(
-                            id_vars=["Data e Hora"],
-                            var_name="local_reservatorio",
-                            value_name="nivel_m",
-                        ).rename(columns={"Data e Hora": "data_hora"})
 
-                        df_niveis_longo["nivel_m"] = pd.to_numeric(
-                            df_niveis_longo["nivel_m"], errors="coerce"
-                        )
-                        df_niveis_longo = df_niveis_longo.dropna(
-                            subset=["nivel_m"]
-                        )
+    # 2. ETA
+    if not df_e.empty:
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.cell(0, 7, "2. ESTACAO DE TRATAMENTO DE AGUA (ETA)", ln=True)
+        pdf.set_font("Helvetica", "", 10)
+        for _, row in df_e.iterrows():
+            loc_eta = buscar_campo_mult(row, ['Localidade'])
+            cc_eta = formatar_valor(buscar_campo_mult(row, ['CC Equatorial ETA', 'CC ETA']))
+            eta_tipo = buscar_campo_mult(row, ['ETA - Tipo'])
+            filtros_qtd = formatar_valor(buscar_campo_mult(row, ['Filtros - Quantidade']))
+            prod_chem = buscar_campo_mult(row, ['Produto Químico Principal', 'Produto Quimico Principal'])
+            obs_eta = buscar_campo_mult(row, ['OBSERVAÇÕES', 'Observações', 'Obs', 'OBS'])
+ 
+            if dado_valido(loc_eta): pdf.cell(0, 5.5, f"Localidade da ETA: {limpar_acentos(loc_eta)}", ln=True)
+            if dado_valido(cc_eta): pdf.cell(0, 5.5, f"CC Equatorial ETA: {cc_eta}", ln=True)
+            if dado_valido(eta_tipo): pdf.cell(0, 5.5, f"Tipo da ETA: {limpar_acentos(eta_tipo)}", ln=True)
+            if dado_valido(filtros_qtd): pdf.cell(0, 5.5, f"Filtros: {filtros_qtd} unidade(s)", ln=True)
+            if dado_valido(prod_chem): pdf.cell(0, 5.5, f"Produtos Quimicos: {limpar_acentos(prod_chem)}", ln=True)
+            if dado_valido(obs_eta): pdf.multi_cell(0, 5.5, f"Obs: {limpar_acentos(obs_eta)}")
 
-                        # Ajuste/Filtro de consistência de nível (-0.1 a 10m)
-                        df_niveis_longo = df_niveis_longo[
-                            (df_niveis_longo["nivel_m"] >= -0.1)
-                            & (df_niveis_longo["nivel_m"] <= 10.0)
-                        ]
 
-                        table_niveis_id = f"{DATASET_ID}.tb_niveis"
-                        job_n = client.load_table_from_dataframe(
-                            df_niveis_longo, table_niveis_id
-                        )
-                        job_n.result()
-                        st.success(
-                            "Níveis dos reservatórios salvos com sucesso no BigQuery!"
-                        )
-                    except Exception as e:
-                        st.error(f"Erro ao salvar níveis no BigQuery: {e}")
+            fotos_eta = extrair_lista_fotos(row, "eta")
+            if fotos_eta:
+                pdf.ln(2)
+                x_start = pdf.get_x()
+                y_pos = pdf.get_y()
+                if y_pos > 220:
+                    pdf.add_page()
+                    y_pos = pdf.get_y()
+               
+                offset_x = 0
+                for idx_f, url_f in enumerate(fotos_eta[:3]):
+                    img_bytes = baixar_imagem_para_pdf(url_f)
+                    if img_bytes:
+                        pdf.image(img_bytes, x=x_start + offset_x, y=y_pos, w=50, h=35)
+                        offset_x += 55
+                if offset_x > 0:
+                    pdf.set_y(y_pos + 38)
+            pdf.ln(3)
 
-            st.balloons()
-            st.info("Processamento finalizado. A página será atualizada.")
-            st.rerun()
 
-#
-# TELA 2: CONSULTAR HISTÓRICO
-#
-elif aba_selecionada == "Consultar Histórico":
-    st.subheader("Filtro e Análise de Período Retroativo")
-    tipo_analise = st.radio(
-        "Selecione o tipo de dado para visualizar:",
-        ["Vazão e Produção", "Níveis de Reservatórios"],
-        horizontal=True,
-    )
+    # 3. ADUTORAS DE INTERLIGAÇÃO
+    if not df_a.empty:
+        c_origem, c_destino = 'Município Origem', 'Município Destino'
+        dados_adu_pdf = df_a[(df_a[c_origem].astype(str).str.strip().str.upper() == mun_limpo) | (df_a[c_destino].astype(str).str.strip().str.upper() == mun_limpo)] if c_origem in df_a.columns else pd.DataFrame()
+        if not dados_adu_pdf.empty:
+            pdf.set_font("Helvetica", "B", 11)
+            pdf.cell(0, 7, "3. SISTEMAS INTERLIGADOS / ADUTORAS DE EXPORTACAO", ln=True)
+            pdf.set_font("Helvetica", "", 10)
+            for _, r_a in dados_adu_pdf.iterrows():
+                diam = formatar_valor(buscar_campo_mult(r_a, ['Diâmetro da Adutora (mm)']) or '-')
+                pdf.cell(0, 5.5, f"Origem: {limpar_acentos(r_a[c_origem])} -> Destino: {limpar_acentos(r_a[c_destino])} | Diametro: {diam} mm", ln=True)
+            pdf.ln(3)
 
-    if not client:
-        st.error("Sem conexão com o BigQuery.")
+
+    # 4. POÇOS
+    if not df_p.empty:
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.cell(0, 7, "4. SISTEMA DE POCOS ARTESIANOS (SUBTERRANEO)", ln=True)
+        for _, row in df_p.iterrows():
+            if pdf.get_y() > 230:
+                pdf.add_page()
+            id_p = buscar_campo_mult(row, ['Identificação do Poço', 'Poço'])
+            cc_p = formatar_valor(buscar_campo_mult(row, ['CC Equatorial', 'CC Equatorial Poço', 'CC Poço', 'CC', 'Código do Cliente', 'CC Equatorial (Poço)']))
+            pdf.set_font("Helvetica", "B", 10)
+            txt_head_p = f"Poco: {limpar_acentos(id_p)}"
+            if dado_valido(cc_p): txt_head_p += f" (CC: {cc_p})"
+            pdf.cell(0, 5.5, txt_head_p, ln=True)
+           
+            pdf.set_font("Helvetica", "", 10)
+            pot_b = formatar_valor(buscar_campo_mult(row, ['Potência da Bomba (cv)']))
+            alt_b = formatar_valor(buscar_campo_mult(row, ['Altura da Bomba (mca)']))
+            vaz_b = formatar_valor(buscar_campo_mult(row, ['Vazão (m³/h)']))
+            obs_p = buscar_campo_mult(row, ['OBSERVAÇÕES', 'Observações', 'Obs', 'OBS'])
+           
+            detalhes = []
+            if dado_valido(pot_b): detalhes.append(f"Potencia: {pot_b} CV")
+            if dado_valido(alt_b): detalhes.append(f"Altura: {alt_b} mca")
+            if dado_valido(vaz_b): detalhes.append(f"Vazao: {vaz_b} m3/h")
+           
+            if detalhes: pdf.cell(0, 5, " | ".join(detalhes), ln=True)
+            if dado_valido(obs_p): pdf.multi_cell(0, 5, f"Obs: {limpar_acentos(obs_p)}")
+
+
+            fotos_poc = extrair_lista_fotos(row, "poc")
+            if fotos_poc:
+                pdf.ln(2)
+                x_start = pdf.get_x()
+                y_pos = pdf.get_y()
+                if y_pos > 220:
+                    pdf.add_page()
+                    y_pos = pdf.get_y()
+               
+                offset_x = 0
+                for idx_f, url_f in enumerate(fotos_poc[:3]):
+                    img_bytes = baixar_imagem_para_pdf(url_f)
+                    if img_bytes:
+                        pdf.image(img_bytes, x=x_start + offset_x, y=y_pos, w=50, h=35)
+                        offset_x += 55
+                if offset_x > 0:
+                    pdf.set_y(y_pos + 38)
+            pdf.ln(2)
+
+
+    return pdf.output()
+
+
+# EXECUÇÃO DA APLICAÇÃO STREAMLIT
+try:
+    df_captacao, df_eta_eeab, df_pocos, df_adutoras, df_geolocalizacao = carregar_dados()
+
+
+    def obter_municipios(df):
+        if df.empty: return []
+        for col in df.columns:
+            if limpar_acentos(col).upper().strip() in ['MUNICIPIO', 'MUNICPIO ORIGEM', 'MUNICÍPIO']:
+                return df[col].dropna().astype(str).str.strip().str.upper().unique().tolist()
+        return []
+
+
+    todos_muns = obter_municipios(df_captacao) + obter_municipios(df_eta_eeab) + obter_municipios(df_pocos) + obter_municipios(df_geolocalizacao)
+    todos_municipios = sorted(list(set(todos_muns)))
+
+
+    if not todos_municipios:
+        st.warning("Nenhum município localizado nas tabelas da planilha. Verifique o preenchimento.")
         st.stop()
 
-    # Leitura dos tetos salvos
-    try:
-        query_tetos = f"SELECT sistema_canal, teto_maximo FROM `{DATASET_ID}.tb_config_tetos`"
-        df_tetos = client.query(query_tetos).to_dataframe()
-        tetos_salvos = dict(
-            zip(df_tetos["sistema_canal"], df_tetos["teto_maximo"])
-        )
-    except Exception:
-        tetos_salvos = {}
 
-    # SUB-TELA: VAZÃO E PRODUÇÃO
-    if tipo_analise == "Vazão e Produção":
-        query_sistemas = f"SELECT DISTINCT sistema_canal FROM `{DATASET_ID}.tb_vazao` WHERE sistema_canal IS NOT NULL ORDER BY sistema_canal"
-        sistemas_disponiveis = [
-            r["sistema_canal"] for r in client.query(query_sistemas).result()
-        ]
+    # CABEÇALHO
+    margem_esq, col_logo, col_texto, margem_dir = st.columns([1, 1.3, 5, 1])
+    with col_logo:
+        if LOGO_PATH: st.image(LOGO_PATH, width=140)
+    with col_texto:
+        st.markdown("""
+        <div class='header-text-container'>
+            <div class='titulo-principal'>FICHAS TÉCNICAS DOS SISTEMAS ZML</div>
+            <div class='subtitulo-principal'>CASAL Companhia de Saneamento de Alagoas</div>
+        </div>
+        """, unsafe_allow_html=True)
 
-        st.sidebar.markdown("---")
-        st.sidebar.subheader("Filtro de Picos (Teto Máximo)")
 
-        tetos_sistemas = {}
-        for sistema in sistemas_disponiveis:
-            if not sistema.strip():
-                continue
-            valor_padrao = float(tetos_salvos.get(sistema, 99999.0))
-            tetos_sistemas[sistema] = st.sidebar.number_input(
-                f"Teto para {sistema}:",
-                min_value=0.0,
-                value=valor_padrao,
-                step=50.0,
-                key=f"teto_{sistema}",
+    st.markdown("---")
+
+
+    col_sel, col_btn = st.columns([3, 1])
+    with col_sel:
+        municipio_selecionado = st.selectbox("🔍 Escolha o Município para visualizar os dados técnicos:", todos_municipios)
+
+
+    def filtrar_por_municipio(df):
+        if df.empty: return pd.DataFrame()
+        col_real = None
+        for c in df.columns:
+            if limpar_acentos(c).upper().strip() in ['MUNICIPIO', 'MUNICÍPIO']:
+                col_real = c
+                break
+        if col_real:
+            return df[df[col_real].astype(str).str.strip().str.upper() == municipio_selecionado]
+        return pd.DataFrame()
+
+
+    dados_cap = filtrar_por_municipio(df_captacao)
+    dados_eta = filtrar_por_municipio(df_eta_eeab)
+    dados_poc = filtrar_por_municipio(df_pocos)
+    dados_geo = filtrar_por_municipio(df_geolocalizacao)
+
+
+    with col_btn:
+        st.write("")
+        st.write("")
+        try:
+            pdf_out = gerar_pdf_ficha(municipio_selecionado, dados_cap, dados_eta, dados_poc, df_adutoras)
+            pdf_bytes = bytes(pdf_out) if isinstance(pdf_out, (bytearray, bytes)) else str(pdf_out).encode('latin1', errors='replace')
+ 
+            st.download_button(
+                label="📥 Salvar Ficha em PDF",
+                data=pdf_bytes,
+                file_name=f"Ficha_Tecnica_{municipio_selecionado.replace(' ', '_')}.pdf",
+                mime="application/pdf",
+                use_container_width=True
             )
+        except Exception as pdf_err:
+            st.error(f"Erro ao gerar PDF: {pdf_err}")
 
-        if st.sidebar.button("Salvar Tetos Permanentemente", type="primary"):
-            try:
-                client.query(
-                    f"DELETE FROM `{DATASET_ID}.tb_config_tetos` WHERE TRUE"
-                ).result()
-                df_novos_tetos = pd.DataFrame(
-                    [
-                        {
-                            "sistema_canal": sis,
-                            "teto_maximo": float(teto),
-                        }
-                        for sis, teto in tetos_sistemas.items()
-                    ]
-                )
-                client.load_table_from_dataframe(
-                    df_novos_tetos, f"{DATASET_ID}.tb_config_tetos"
-                ).result()
-                st.sidebar.success("Limites atualizados no BigQuery!")
-            except Exception as e:
-                st.sidebar.error(f"Erro ao salvar tetos: {e}")
-
-        if sistemas_disponiveis:
-            sistema_filtro = st.selectbox(
-                "Selecione qual ETA/Sistema deseja analisar:",
-                sistemas_disponiveis,
-            )
-
-            col1, col2 = st.columns(2)
-            data_inicio = col1.date_input(
-                "Data Inicial:",
-                datetime.date.today() - datetime.timedelta(days=3),
-                format="DD/MM/YYYY",
-                key="vazao_dt_ini",
-            )
-            data_fim = col2.date_input(
-                "Data Final:",
-                datetime.date.today(),
-                format="DD/MM/YYYY",
-                key="vazao_dt_fim",
-            )
-
-            query_dados = f"""
-            SELECT data_hora, sistema_canal, vazao_m3h, totalizador_m3
-            FROM `{DATASET_ID}.tb_vazao`
-            WHERE sistema_canal = @sistema
-            AND DATE(data_hora) BETWEEN @data_ini AND @data_fim
-            ORDER BY data_hora ASC
-            """
-            job_config = bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ScalarQueryParameter(
-                        "sistema", "STRING", sistema_filtro
-                    ),
-                    bigquery.ScalarQueryParameter(
-                        "data_ini", "DATE", data_inicio
-                    ),
-                    bigquery.ScalarQueryParameter(
-                        "data_fim", "DATE", data_fim
-                    ),
-                ]
-            )
-            df_filtrado = client.query(
-                query_dados, job_config=job_config
-            ).to_dataframe()
-
-            if not df_filtrado.empty:
-                df_filtrado["Data e Hora"] = pd.to_datetime(
-                    df_filtrado["data_hora"]
-                )
-                df_filtrado["Data"] = df_filtrado["Data e Hora"].dt.date
-                df_filtrado["Vazão (m³/h)"] = pd.to_numeric(
-                    df_filtrado["vazao_m3h"], errors="coerce"
-                )
-                df_filtrado["Totalizador (m³)"] = pd.to_numeric(
-                    df_filtrado["totalizador_m3"], errors="coerce"
-                )
-
-                teto_atual = tetos_sistemas.get(sistema_filtro, 99999.0)
-                resumo_dias = []
-                datas_unicas = sorted(df_filtrado["Data"].unique())
-
-                tot_periodo = df_filtrado[df_filtrado["Totalizador (m³)"] > 0][
-                    "Totalizador (m³)"
-                ].dropna()
-                if len(tot_periodo) >= 2:
-                    total_volume_physical = float(
-                        tot_periodo.iloc[-1]
-                    ) - float(tot_periodo.iloc[0])
-                    if total_volume_physical < 0:
-                        total_volume_physical = abs(total_volume_physical)
-                else:
-                    total_volume_physical = 0.0
-
-                tot_ultimo_dia_anterior = None
-                for data in datas_unicas:
-                    dt_str = data.strftime("%d/%m/%Y")
-                    df_dia = (
-                        df_filtrado[df_filtrado["Data"] == data]
-                        .drop_duplicates(subset=["Data e Hora"])
-                        .sort_values("Data e Hora")
-                    )
-
-                    df_vazao_valida = df_dia[
-                        df_dia["Vazão (m³/h)"].notna()
-                    ].copy()
-                    if df_vazao_valida.empty:
-                        continue
-
-                    df_vazao_valida["intervalo_horas"] = (
-                        df_vazao_valida["Data e Hora"]
-                        .diff()
-                        .dt.total_seconds()
-                        / 3600.0
-                        .fillna(10.0 / 60.0)
-                        .clip(upper=1.0)
-                    )
-
-                    df_fora_do_ar = df_vazao_valida[
-                        (df_vazao_valida["Vazão (m³/h)"] < 0)
-                        | (df_vazao_valida["Vazão (m³/h)"] > teto_atual)
-                    ]
-                    df_ativas = df_vazao_valida[
-                        (df_vazao_valida["Vazão (m³/h)"] >= 0)
-                        & (df_vazao_valida["Vazão (m³/h)"] <= teto_atual)
-                    ]
-
-                    horas_fora_do_ar = min(
-                        24.0, float(df_fora_do_ar["intervalo_horas"].sum())
-                    )
-                    horas_funcionamento = min(
-                        24.0, float(df_ativas["intervalo_horas"].sum())
-                    )
-
-                    media_vazao = (
-                        df_ativas["Vazão (m³/h)"].mean()
-                        if not df_ativas.empty
-                        else 0.0
-                    )
-                    volume_calculado_vazao = (
-                        horas_funcionamento * media_vazao
-                    )
-
-                    tot_validos_dia = df_dia[
-                        df_dia["Totalizador (m³)"] > 0
-                    ]["Totalizador (m³)"].dropna()
-                    if not tot_validos_dia.empty:
-                        ultimo_dia = float(tot_validos_dia.iloc[-1])
-                        primeiro_dia = float(tot_validos_dia.iloc[0])
-
-                        if tot_ultimo_dia_anterior is not None:
-                            volume_diario_totalizador = (
-                                ultimo_dia - tot_ultimo_dia_anterior
-                            )
-                        else:
-                            volume_diario_totalizador = (
-                                ultimo_dia - primeiro_dia
-                            )
-
-                        if volume_diario_totalizador < 0:
-                            volume_diario_totalizador = 0.0
-                        tot_ultimo_dia_anterior = ultimo_dia
-                    else:
-                        volume_diario_totalizador = 0.0
-
-                    resumo_dias.append(
-                        {
-                            "Data": dt_str,
-                            "Vazão Média (m³/h)": round(media_vazao, 2),
-                            "Horas Ativas Reais": round(
-                                horas_funcionamento, 1
-                            ),
-                            "Tempo Fora do Ar (h)": round(horas_fora_do_ar, 1),
-                            "Vol. Diário Totalizador (m³)": round(
-                                volume_diario_totalizador, 2
-                            ),
-                            "Vol. Calculado Vazão (m³)": round(
-                                volume_calculado_vazao, 2
-                            ),
-                        }
-                    )
-
-                df_resumo = (
-                    pd.DataFrame(resumo_dias)
-                    if resumo_dias
-                    else pd.DataFrame(
-                        columns=[
-                            "Data",
-                            "Vazão Média (m³/h)",
-                            "Horas Ativas Reais",
-                            "Tempo Fora do Ar (h)",
-                            "Vol. Diário Totalizador (m³)",
-                            "Vol. Calculado Vazão (m³)",
-                        ]
-                    )
-                )
-
-                total_volume_calculated = (
-                    df_resumo["Vol. Calculado Vazão (m³)"].sum()
-                    if not df_resumo.empty
-                    else 0.0
-                )
-                total_horas_ativas = (
-                    df_resumo["Horas Ativas Reais"].sum()
-                    if not df_resumo.empty
-                    else 0.0
-                )
-                total_horas_fora = (
-                    df_resumo["Tempo Fora do Ar (h)"].sum()
-                    if not df_resumo.empty
-                    else 0.0
-                )
-
-                linha_total = pd.DataFrame(
-                    [
-                        {
-                            "Data": "TOTAL DO PERÍODO",
-                            "Vazão Média (m³/h)": "-",
-                            "Horas Ativas Reais": round(total_horas_ativas, 1),
-                            "Tempo Fora do Ar (h)": round(total_horas_fora, 1),
-                            "Vol. Diário Totalizador (m³)": round(
-                                total_volume_physical, 2
-                            ),
-                            "Vol. Calculado Vazão (m³)": round(
-                                total_volume_calculated, 2
-                            ),
-                        }
-                    ]
-                )
-
-                df_resumo_com_total = pd.concat(
-                    [df_resumo, linha_total], ignore_index=True
-                )
-
-                st.write("")
-                st.subheader(
-                    f"Relatório Consolidado do Período: {sistema_filtro}"
-                )
-
-                card1, card2 = st.columns(2)
-                v_phy_str = (
-                    f"{total_volume_physical:,.2f}"
-                    .replace(",", "X")
-                    .replace(".", ",")
-                    .replace("X", ".")
-                )
-                v_calc_str = (
-                    f"{total_volume_calculated:,.2f}"
-                    .replace(",", "X")
-                    .replace(".", ",")
-                    .replace("X", ".")
-                )
-
-                card1.metric(
-                    label="SOMA Totalizador do Período Selecionado",
-                    value=f"{v_phy_str} m³",
-                )
-                card2.metric(
-                    label="SOMA Calculada por Vazão no Período",
-                    value=f"{v_calc_str} m³",
-                )
-
-                st.dataframe(
-                    df_resumo_com_total,
-                    use_container_width=True,
-                    hide_index=True,
-                )
-
-                df_grafico = df_filtrado[
-                    (df_filtrado["Vazão (m³/h)"] >= 0)
-                    & (df_filtrado["Vazão (m³/h)"] <= teto_atual)
-                ]
-
-                if not df_grafico.empty:
-                    fig_vazao = px.line(
-                        df_grafico,
-                        x="Data e Hora",
-                        y="Vazão (m³/h)",
-                        title=f"Comportamento Contínuo da Vazão ({sistema_filtro})",
-                    )
-                    fig_vazao.update_traces(line_color="#1f77b4")
-                    st.plotly_chart(fig_vazao, use_container_width=True)
-
-                if not df_resumo.empty:
-                    fig_volume = px.bar(
-                        df_resumo,
-                        x="Data",
-                        y="Vol. Diário Totalizador (m³)",
-                        title="Volume Líquido Diário Produzido (m³)",
-                        text_auto=".2f",
-                    )
-                    st.plotly_chart(fig_volume, use_container_width=True)
-            else:
-                st.warning(
-                    "Nenhum dado encontrado para os filtros selecionados."
-                )
-        else:
-            st.warning("Não há canais de macromedição registrados.")
-
-    # SUB-TELA: NÍVEIS DE RESERVATÓRIOS
-    elif tipo_analise == "Níveis de Reservatórios":
-        query_locais = f"SELECT DISTINCT local_reservatorio FROM `{DATASET_ID}.tb_niveis` ORDER BY local_reservatorio"
-        locais_disponiveis = [
-            r["local_reservatorio"]
-            for r in client.query(query_locais).result()
-        ]
-
-        query_vazao_canais = f"SELECT DISTINCT sistema_canal FROM `{DATASET_ID}.tb_vazao` WHERE sistema_canal IS NOT NULL ORDER BY sistema_canal"
-        canais_vazao_disponiveis = [
-            r["sistema_canal"] for r in client.query(query_vazao_canais).result()
-        ]
-
-        locais_limpos = sorted(
-            list(
-                set(
-                    [
-                        s.replace("(m)", "")
-                        .replace("(%)", "")
-                        .replace("Nivel", "")
-                        .replace("Nível", "")
-                        .strip()
-                        for s in locais_disponiveis
-                    ]
-                )
-            )
-        )
-
-        if locais_limpos:
-            locais_selecionados = st.multiselect(
-                "Selecione qual(is) Local(is)/Reservatório(s) deseja analisar e comparar:",
-                options=locais_limpos,
-                default=[locais_limpos[0]] if locais_limpos else [],
-            )
-
-            vazao_selecionada = st.selectbox(
-                "Deseja incluir a Vazão de algum sistema neste mesmo gráfico? (Opcional)",
-                options=["[Não incluir vazão]"] + canais_vazao_disponiveis,
-            )
-
-            cn1, cn2 = st.columns(2)
-            d_n_ini = cn1.date_input(
-                "Data Inicial do Nível:",
-                value=datetime.date.today() - datetime.timedelta(days=3),
-                format="DD/MM/YYYY",
-                key="nivel_dt_ini",
-            )
-            d_n_fim = cn2.date_input(
-                "Data Final do Nível:",
-                value=datetime.date.today(),
-                format="DD/MM/YYYY",
-                key="nivel_dt_fim",
-            )
-
-            if locais_selecionados:
-                query_niveis = f"""
-                SELECT data_hora, local_reservatorio, nivel_m
-                FROM `{DATASET_ID}.tb_niveis`
-                WHERE DATE(data_hora) BETWEEN @data_ini AND @data_fim
-                ORDER BY data_hora ASC
-                """
-                job_config_niv = bigquery.QueryJobConfig(
-                    query_parameters=[
-                        bigquery.ScalarQueryParameter(
-                            "data_ini", "DATE", d_n_ini
-                        ),
-                        bigquery.ScalarQueryParameter(
-                            "data_fim", "DATE", d_n_fim
-                        ),
-                    ]
-                )
-                df_n_filtrado = client.query(
-                    query_niveis, job_config_niv
-                ).to_dataframe()
-
-                if not df_n_filtrado.empty:
-                    df_n_filtrado["nivel_m"] = pd.to_numeric(
-                        df_n_filtrado["nivel_m"], errors="coerce"
-                    )
-                    df_n_filtrado = df_n_filtrado[
-                        (df_n_filtrado["nivel_m"] >= -0.1)
-                        & (df_n_filtrado["nivel_m"] <= 10.0)
-                    ]
-
-                    if not df_n_filtrado.empty:
-                        df_n_filtrado["Data e Hora"] = pd.to_datetime(
-                            df_n_filtrado["data_hora"]
-                        )
-
-                        st.subheader(
-                            "Monitoramento Integrado e Comparativo de Níveis"
-                        )
-                        fig_m = make_subplots(
-                            specs=[[{"secondary_y": True}]]
-                        )
-                        dados_m_plotados = False
-                        max_nivel_encontrado = 0.0
-
-                        for local in locais_selecionados:
-                            df_loc = df_n_filtrado[
-                                df_n_filtrado[
-                                    "local_reservatorio"
-                                ].str.contains(local, case=False, na=False)
-                            ].copy()
-
-                            if not df_loc.empty:
-                                df_loc["val_valido"] = df_loc["nivel_m"].apply(
-                                    lambda x: x if x >= 0 else np.nan
-                                )
-                                max_val = df_loc["val_valido"].max()
-
-                                if (
-                                    pd.notna(max_val)
-                                    and max_val > max_nivel_encontrado
-                                ):
-                                    max_nivel_encontrado = max_val
-
-                                # 1. Linha contínua cinza bem clarinha conectando o trecho fora do ar
-                                df_loc_interp = df_loc.dropna(
-                                    subset=["val_valido"]
-                                )
-                                fig_m.add_trace(
-                                    go.Scatter(
-                                        x=df_loc_interp["Data e Hora"],
-                                        y=df_loc_interp["val_valido"],
-                                        name=f"Fora do Ar (Nível {local})",
-                                        mode="lines",
-                                        line=dict(
-                                            color="rgba(210, 210, 210, 0.6)",
-                                            width=1.5,
-                                        ),
-                                        hoverinfo="skip",
-                                        showlegend=True,
-                                    ),
-                                    secondary_y=False,
-                                )
-
-                                # 2. Linha azul escuro (blue) sólida para dados válidos de nível
-                                fig_m.add_trace(
-                                    go.Scatter(
-                                        x=df_loc["Data e Hora"],
-                                        y=df_loc["val_valido"],
-                                        name=f"Nível {local} (m)",
-                                        mode="lines",
-                                        line=dict(
-                                            color="#0000FF",
-                                            width=2.5,
-                                        ),
-                                        connectgaps=False,
-                                        hovertemplate="<b>Nível:</b> %{y:.2f} m<br>%{x}<extra></extra>",
-                                    ),
-                                    secondary_y=False,
-                                )
-                                dados_m_plotados = True
-
-                        df_v_plot = pd.DataFrame()
-                        if vazao_selecionada != "[Não incluir vazão]":
-                            query_vazao_plot = f"""
-                            SELECT data_hora, vazao_m3h
-                            FROM `{DATASET_ID}.tb_vazao`
-                            WHERE sistema_canal = @sistema
-                            AND DATE(data_hora) BETWEEN @data_ini AND @data_fim
-                            ORDER BY data_hora ASC
-                            """
-                            job_config_vaz = bigquery.QueryJobConfig(
-                                query_parameters=[
-                                    bigquery.ScalarQueryParameter(
-                                        "sistema", "STRING", vazao_selecionada
-                                    ),
-                                    bigquery.ScalarQueryParameter(
-                                        "data_ini", "DATE", d_n_ini
-                                    ),
-                                    bigquery.ScalarQueryParameter(
-                                        "data_fim", "DATE", d_n_fim
-                                    ),
-                                ]
-                            )
-                            df_v_plot = client.query(
-                                query_vazao_plot, job_config=job_config_vaz
-                            ).to_dataframe()
-
-                            if not df_v_plot.empty:
-                                df_v_plot["Data e Hora"] = pd.to_datetime(
-                                    df_v_plot["data_hora"]
-                                )
-                                df_v_plot["Vazão (m³/h)"] = pd.to_numeric(
-                                    df_v_plot["vazao_m3h"], errors="coerce"
-                                )
-                                df_v_plot = df_v_plot.sort_values("Data e Hora")
-                                df_v_plot["val_valido"] = df_v_plot[
-                                    "Vazão (m³/h)"
-                                ].apply(lambda x: x if x >= 0 else np.nan)
-
-                                # 1. Linha contínua cinza bem clarinha conectando falhas da vazão
-                                df_v_interp = df_v_plot.dropna(
-                                    subset=["val_valido"]
-                                )
-                                fig_m.add_trace(
-                                    go.Scatter(
-                                        x=df_v_interp["Data e Hora"],
-                                        y=df_v_interp["val_valido"],
-                                        name="Fora do Ar (Vazão)",
-                                        mode="lines",
-                                        line=dict(
-                                            color="rgba(210, 210, 210, 0.6)",
-                                            width=1.5,
-                                        ),
-                                        hoverinfo="skip",
-                                        showlegend=True,
-                                    ),
-                                    secondary_y=True,
-                                )
-
-                                # 2. Linha vermelha sólida para dados válidos de vazão
-                                fig_m.add_trace(
-                                    go.Scatter(
-                                        x=df_v_plot["Data e Hora"],
-                                        y=df_v_plot["val_valido"],
-                                        name=f"Vazão: {vazao_selecionada}",
-                                        mode="lines",
-                                        line=dict(
-                                            color="#FF6666",
-                                            width=2.5,
-                                        ),
-                                        connectgaps=False,
-                                        hovertemplate="<b>Vazão:</b> %{y:.2f} m³/h<br>%{x}<extra></extra>",
-                                    ),
-                                    secondary_y=True,
-                                )
-
-                        # Ajuste de teto para posicionar o Nível um pouco abaixo da Vazão
-                        teto_y1 = (
-                            max(max_nivel_encontrado * 1.7, 5.0)
-                            if max_nivel_encontrado > 0
-                            else 10.0
-                        )
-
-                        fig_m.update_layout(
-                            title_text="Nível Contínuo em Metros (m) vs Comportamento de Vazão",
-                            hovermode="x unified",
-                            legend=dict(
-                                orientation="h",
-                                yanchor="bottom",
-                                y=-0.25,
-                                xanchor="right",
-                                x=1,
-                            ),
-                        )
-                        fig_m.update_xaxes(title_text="Data e Hora")
-                        fig_m.update_yaxes(
-                            title_text="<b>Nível (m)</b>",
-                            range=[0, teto_y1],
-                            exponentformat="none",
-                            secondary_y=False,
-                        )
-                        fig_m.update_yaxes(
-                            title_text="<b>Vazão (m³/h)</b>",
-                            exponentformat="none",
-                            showgrid=False,
-                            secondary_y=True,
-                        )
-
-                        if dados_m_plotados:
-                            st.plotly_chart(fig_m, use_container_width=True)
-
-                        # ------------------------------------------
-                        # DETECÇÃO DE LAVAGENS (REGRAS DE COLÔNIA)
-                        # ------------------------------------------
-
-                        # 1. CAPTURA E NORMALIZAÇÃO DA SELEÇÃO DA TELA
-                        selecao_usuario = ""
-                        for var_nome in [
-                            "sel_res",
-                            "locais_selecionados",
-                            "reservatorios_selecionados",
-                            "vazao_selecionada",
-                        ]:
-                            if var_nome in globals():
-                                selecao_usuario += " " + str(
-                                    globals()[var_nome]
-                                )
-
-                        selecao_usuario_norm = (
-                            unicodedata.normalize("NFKD", selecao_usuario)
-                            .encode("ASCII", "ignore")
-                            .decode("utf-8")
-                            .lower()
-                        )
-
-                        e_colonia = "colonia" in selecao_usuario_norm
-
-                        # ==========================================
-                        # 3. TABELA DE DETECÇÃO DAS LAVAGENS DE FILTRO
-                        # ==========================================
-                        if (
-                            e_colonia
-                            and "vazao_selecionada" in globals()
-                            and vazao_selecionada != "[Não incluir vazão]"
-                            and not df_v_plot.empty
-                        ):
-                            st.markdown("---")
-                            st.subheader(
-                                "🧹 Tabela de Lavagens de Filtro Detectadas (Colônia Leopoldina)"
-                            )
-
-                            df_lavagem = df_v_plot.sort_values(
-                                "Data e Hora"
-                            ).copy()
-
-                            # REGRA COLÔNIA: Faixa de queda/lavagem (0 a 5 m³/h) ou fita Fora do Ar
-                            df_lavagem["em_baixa_ou_fora"] = (
-                                df_lavagem["Vazão (m³/h)"].isna()
-                            ) | (df_lavagem["Vazão (m³/h)"] <= 5.0)
-
-                            df_lavagem["grupo"] = (
-                                df_lavagem["em_baixa_ou_fora"]
-                                != df_lavagem["em_baixa_ou_fora"].shift()
-                            ).cumsum()
-
-                            eventos_lavagem = []
-                            grupos_lavagem = df_lavagem[
-                                df_lavagem["em_baixa_ou_fora"]
-                            ].groupby("grupo")
-
-                            # Teto de operação normal considerado: >= 80 m³/h (Ref: 120 m³/h)
-                            LIMITE_OPERACAO_NORMAL = 80.0
-
-                            for id_grupo, grupo in grupos_lavagem:
-                                dt_inicio = grupo["Data e Hora"].min()
-                                dt_fim = grupo["Data e Hora"].max()
-                                duracao_seg = (
-                                    dt_fim - dt_inicio
-                                ).total_seconds()
-                                duracao_horas = duracao_seg / 3600.0
-
-                                # Duração entre 40min (2400s) e 3h (10800s)
-                                if 2400 <= duracao_seg <= 10800:
-                                    idx_inicio = grupo.index[0]
-                                    idx_fim = grupo.index[-1]
-
-                                    vazao_antes = (
-                                        df_lavagem.loc[
-                                            idx_inicio - 1, "Vazão (m³/h)"
-                                        ]
-                                        if idx_inicio > 0
-                                        else np.nan
-                                    )
-                                    vazao_depois = (
-                                        df_lavagem.loc[
-                                            idx_fim + 1, "Vazão (m³/h)"
-                                        ]
-                                        if idx_fim + 1 < len(df_lavagem)
-                                        else np.nan
-                                    )
-
-                                    # Checa transição abrupta comparada ao regime em ~120 m³/h (>= 80 m³/h)
-                                    veio_de_vazao_normal = (
-                                        pd.notna(vazao_antes)
-                                        and vazao_antes >= LIMITE_OPERACAO_NORMAL
-                                    )
-                                    voltou_para_vazao_normal = (
-                                        pd.notna(vazao_depois)
-                                        and vazao_depois >= LIMITE_OPERACAO_NORMAL
-                                    )
-
-                                    if (
-                                        veio_de_vazao_normal
-                                        or voltou_para_vazao_normal
-                                    ):
-                                        dia_evento = dt_inicio.date()
-                                        vazoes_do_dia = df_v_plot[
-                                            (
-                                                df_v_plot[
-                                                    "Data e Hora"
-                                                ].dt.date
-                                                == dia_evento
-                                            )
-                                            & (
-                                                df_v_plot["Vazão (m³/h)"]
-                                                >= LIMITE_OPERACAO_NORMAL
-                                            )
-                                        ]["Vazão (m³/h)"]
-
-                                        vazao_media_dia = (
-                                            vazoes_do_dia.mean()
-                                            if not vazoes_do_dia.empty
-                                            else 120.0
-                                        )
-                                        vol_gasto = (
-                                            vazao_media_dia * duracao_horas
-                                        )
-
-                                        eventos_lavagem.append(
-                                            {
-                                                "Início da Lavagem": dt_inicio.strftime(
-                                                    "%d/%m/%Y %H:%M:%S"
-                                                ),
-                                                "Fim da Lavagem": dt_fim.strftime(
-                                                    "%d/%m/%Y %H:%M:%S"
-                                                ),
-                                                "Duração": f"{int(duracao_seg // 60)} min",
-                                                "Vazão Média do Dia (m³/h)": round(
-                                                    vazao_media_dia, 2
-                                                ),
-                                                "Vol. Gasto Estimado (m³)": round(
-                                                    vol_gasto, 2
-                                                ),
-                                            }
-                                        )
-
-                            if eventos_lavagem:
-                                df_tb_lavagens = pd.DataFrame(eventos_lavagem)
-                                total_vol_lavagens = df_tb_lavagens[
-                                    "Vol. Gasto Estimado (m³)"
-                                ].sum()
-                                total_eventos_lav = len(df_tb_lavagens)
-
-                                m_col1, m_col2 = st.columns(2)
-                                m_col1.metric(
-                                    "Total de Lavagens no Período",
-                                    f"{total_eventos_lav} eventos",
-                                )
-                                m_col2.metric(
-                                    "Volume Total Estimado Gasto",
-                                    f"{total_vol_lavagens:,.2f}".replace(
-                                        ",", "X"
-                                    )
-                                    .replace(".", ",")
-                                    .replace("X", ".")
-                                    + " m³",
-                                )
-
-                                linha_total_lav = pd.DataFrame(
-                                    [
-                                        {
-                                            "Início da Lavagem": "TOTAL DO PERÍODO",
-                                            "Fim da Lavagem": "-",
-                                            "Duração": "-",
-                                            "Vazão Média do Dia (m³/h)": "",
-                                            "Vol. Gasto Estimado (m³)": round(
-                                                total_vol_lavagens, 2
-                                            ),
-                                        }
-                                    ]
-                                )
-
-                                df_exibir_lav = pd.concat(
-                                    [df_tb_lavagens, linha_total_lav],
-                                    ignore_index=True,
-                                )
-                                st.dataframe(
-                                    df_exibir_lav,
-                                    use_container_width=True,
-                                    hide_index=True,
-                                )
-                            else:
-                                st.info(
-                                    "Nenhum evento característico de lavagem de filtro foi identificado no período."
-                                )
+
+    st.write(f"Exibindo dados operacionais atuais para: **{municipio_selecionado}**")
+    st.markdown("---")
+
+
+    cc_eeab_da_eta = None
+    if not dados_eta.empty:
+        for _, r_e in dados_eta.iterrows():
+            val = formatar_valor(buscar_campo_mult(r_e, ['CC Equatorial EEAB', 'CC EEAB']))
+            if val:
+                cc_eeab_da_eta = val
+                break
+
+
+    # --- EXIBIÇÃO DA INFRAESTRUTURA NA TELA ---
+    if not dados_cap.empty or not dados_eta.empty:
+        st.header("🏢 Infraestrutura de Tratamento e Distribuição Superficial")
+        col_cap, col_eta = st.columns(2)
+
+
+        # CARD CAPTAÇÃO E EEAB
+        with col_cap:
+            if not dados_cap.empty:
+                st.markdown("<div class='card'><div class='card-title'>🌊 DADOS DA CAPTAÇÃO E ADUTORAS/EEAB</div>", unsafe_allow_html=True)
+                for _, row in dados_cap.iterrows():
+                    loc_c = buscar_campo_mult(row, ['Localidade'])
+                    if dado_valido(loc_c):
+                        st.write(f"**Localidade/Sistema:** {loc_c}")
+                    if dado_valido(cc_eeab_da_eta):
+                        st.write(f"**⚡ CC Equatorial EEAB:** {cc_eeab_da_eta}")
+
+
+                    tipo_cap = buscar_campo_mult(row, ['Captação - Tipo', 'Tipo de Captação'])
+                    if dado_valido(tipo_cap): st.write(f"**Tipo de Captação:** {tipo_cap}")
+
+
+                    vaz_cap = formatar_valor(buscar_campo_mult(row, ['EEAB - Vazão Principal (m³/h)', 'EEAB - Vazão Principal (m3/h)', 'Vazão Principal', 'Vazão']))
+                    if dado_valido(vaz_cap): st.write(f"**Vazão Principal:** {vaz_cap} m³/h")
+
+
+                    bomba_cap = buscar_campo_mult(row, ['EEAB - Tipo da Bomba Principal', 'Tipo da Bomba Principal', 'EEAB Tipo Bomba Principal'])
+                    pot_cap = formatar_valor(buscar_campo_mult(row, ['EEAB - Potência Principal (cv)', 'EEAB - Potencia Principal (cv)', 'Potência Principal']))
+                    alt_cap = formatar_valor(buscar_campo_mult(row, ['EEAB - Altura Manométrica Principal (mca)', 'EEAB - Altura Manometrica Principal (mca)']))
+
+
+                    if dado_valido(bomba_cap) or dado_valido(pot_cap) or dado_valido(alt_cap):
+                        txt_b = "**Bomba Principal (EEAB):**"
+                        if dado_valido(bomba_cap): txt_b += f" {bomba_cap}"
+                        if dado_valido(pot_cap): txt_b += f" | Potência: {pot_cap} CV"
+                        if dado_valido(alt_cap): txt_b += f" | Altura: {alt_cap} mca"
+                        st.write(txt_b)
+
+
+                    possui_reserva = buscar_campo_mult(row, ['EEAB - Possui Bomba Reserva', 'EAB - Possui Bomba Reserva', 'Possui Bomba Reserva', 'Bomba Reserva'])
+                    tipo_reserva = buscar_campo_mult(row, ['EEAB - Tipo da Bomba Reserva', 'EAB - Tipo da Bomba Reserva', 'Tipo da Bomba Reserva', 'EEAB Tipo Bomba Reserva'])
+                    pot_reserva = formatar_valor(buscar_campo_mult(row, ['EEAB - Potência Reserva (cv)', 'EEAB - Potencia Reserva (cv)', 'EAB - Potência Reserva (cv)', 'EAB - Potencia Reserva (cv)', 'Potência Reserva']))
+                    vaz_reserva = formatar_valor(buscar_campo_mult(row, ['EEAB - Vazão Reserva (m³/h)', 'EEAB - Vazao Reserva (m3/h)', 'EAB - Vazão Reserva (m³/h)', 'EAB - Vazao Reserva (m3/h)', 'Vazão Reserva']))
+                    alt_reserva = formatar_valor(buscar_campo_mult(row, ['EEAB - Altura Manométrica Reserva (mca)', 'EEAB - Altura Manometrica Reserva (mca)', 'EAB - Altura Manométrica Reserva (mca)', 'Altura Manométrica Reserva']))
+
+
+                    if dado_valido(possui_reserva):
+                        txt_res = f"**Bomba Reserva:** {possui_reserva}"
+                        if dado_valido(tipo_reserva): txt_res += f" ({tipo_reserva})"
+                        if dado_valido(pot_reserva): txt_res += f" | Potência: {pot_reserva} cv"
+                        if dado_valido(vaz_reserva): txt_res += f" | Vazão: {vaz_reserva} m³/h"
+                        if dado_valido(alt_reserva): txt_res += f" | Altura: {alt_reserva} mca"
+                        st.write(txt_res)
+
+
+                    crivo = buscar_campo_mult(row, ['Captação - Possui Crivo', 'Possui Crivo'])
+                    mat_crivo = buscar_campo_mult(row, ['Captação - Material Crivo', 'Material Crivo'])
+                    diam_crivo = formatar_valor(buscar_campo_mult(row, ['Captação - Diâmetro Crivo (mm)', 'Captação - Diametro Crivo (mm)']))
+
+
+                    if dado_valido(crivo):
+                        txt_c = f"**Possui Crivo:** {crivo}"
+                        if dado_valido(diam_crivo): txt_c += f" ({diam_crivo} mm)"
+                        if dado_valido(mat_crivo): txt_c += f" - {mat_crivo}"
+                        st.write(txt_c)
+
+
+                    diam = formatar_valor(buscar_campo_mult(row, ['Adutora EEAB até ETA - Diâmetro (mm)', 'Adutora EEAB ate ETA - Diametro (mm)']))
+                    comp = formatar_valor(buscar_campo_mult(row, ['Adutora EEAB até ETA - Comprimento (m)', 'Adutora EEAB ate ETA - Comprimento (m)']))
+                    mat_adu = buscar_campo_mult(row, ['Adutora EEAB até ETA - Material', 'Adutora EEAB ate ETA - Material'])
+
+
+                    if dado_valido(diam) or dado_valido(comp):
+                        txt_adu = "**Adutora EEAB ➔ ETA:**"
+                        if dado_valido(diam): txt_adu += f" Diâmetro {diam} mm"
+                        if dado_valido(mat_adu): txt_adu += f" ({mat_adu})"
+                        if dado_valido(comp): txt_adu += f" | Comprimento: {comp} m"
+                        st.write(txt_adu)
+
+
+                    link_maps_cap = obter_link_gmaps(row, df_geo=dados_geo, tipo_busca='cap')
+                    if link_maps_cap:
+                        st.markdown(f"<a href='{link_maps_cap}' target='_blank' class='link-maps-discreto'>📍 Ver no Google Maps</a>", unsafe_allow_html=True)
+
+
+                    obs_c = buscar_campo_mult(row, ['OBSERVAÇÕES', 'Observações', 'Obs', 'OBS'])
+                    if dado_valido(obs_c): st.info(f"**Obs:** {obs_c}")
+
+
+                    fotos_cap = extrair_lista_fotos(row, "cap")
+                    exibir_galeria_fotos(fotos_cap, legenda_base="Captação/EEAB")
+
+
+                st.markdown("</div>", unsafe_allow_html=True)
+
+
+        # CARD ESTAÇÃO DE TRATAMENTO DE ÁGUA (ETA)
+        with col_eta:
+            if not dados_eta.empty:
+                st.markdown("<div class='card'><div class='card-title'>🏭 ESTAÇÃO DE TRATAMENTO DE ÁGUA (ETA)</div>", unsafe_allow_html=True)
+                for _, row in dados_eta.iterrows():
+                    loc_e = buscar_campo_mult(row, ['Localidade'])
+                    if dado_valido(loc_e): st.write(f"**Localidade da ETA:** {loc_e}")
+
+
+                    cc_eta = formatar_valor(buscar_campo_mult(row, ['CC Equatorial ETA', 'CC ETA']))
+                    if dado_valido(cc_eta): st.write(f"**⚡ CC Equatorial ETA:** {cc_eta}")
+
+
+                    eta_tipo = buscar_campo_mult(row, ['ETA - Tipo'])
+                    if dado_valido(eta_tipo): st.write(f"**Tipo da ETA:** {eta_tipo}")
+
+
+                    mat_est = buscar_campo_mult(row, ['ETA - Material Estrutura'])
+                    if dado_valido(mat_est): st.write(f"**Material da Estrutura:** {mat_est}")
+
+
+                    f_qtd = formatar_valor(buscar_campo_mult(row, ['Filtros - Quantidade']))
+                    f_alt = formatar_valor(buscar_campo_mult(row, ['Filtros - Altura (m)']))
+                    f_vol = formatar_valor(buscar_campo_mult(row, ['Filtros - Volume (m³)', 'Filtros - Volume (m3)']))
+
+
+                    if dado_valido(f_qtd) or dado_valido(f_vol):
+                        txt_f = "**Filtros:**"
+                        if dado_valido(f_qtd): txt_f += f" {f_qtd} unidade(s)"
+                        if dado_valido(f_alt): txt_f += f" | Altura: {f_alt} m"
+                        if dado_valido(f_vol): txt_f += f" | Volume Total: {f_vol} m³"
+                        st.write(txt_f)
+
+
+                    d_alt = formatar_valor(buscar_campo_mult(row, ['Decantador - Altura (m)']))
+                    d_vol = formatar_valor(buscar_campo_mult(row, ['Decantador - Volume (m³)', 'Decantador - Volume (m3)']))
+
+
+                    if dado_valido(d_alt) or dado_valido(d_vol):
+                        txt_d = "**Decantador:**"
+                        if dado_valido(d_alt): txt_d += f" Altura: {d_alt} m"
+                        if dado_valido(d_vol): txt_d += f" | Volume: {d_vol} m³"
+                        st.write(txt_d)
+
+
+                    rl_alt = formatar_valor(buscar_campo_mult(row, ['Reservatório Lavagem - Altura (m)', 'Reservatorio Lavagem - Altura (m)']))
+                    rl_vol = formatar_valor(buscar_campo_mult(row, ['Reservatório Lavagem - Volume (m³)', 'Reservatorio Lavagem - Volume (m3)']))
+
+
+                    if dado_valido(rl_alt) or dado_valido(rl_vol):
+                        txt_rl = "**Reservatório de Lavagem:**"
+                        if dado_valido(rl_alt): txt_rl += f" Altura: {rl_alt} m"
+                        if dado_valido(rl_vol): txt_rl += f" | Volume: {rl_vol} m³"
+                        st.write(txt_rl)
+
+
+                    cc_alt = formatar_valor(buscar_campo_mult(row, ['Câmara de Carga - Altura (m)', 'Camara de Carga - Altura (m)']))
+                    cc_vol = formatar_valor(buscar_campo_mult(row, ['Câmara de Carga - Volume (m³)', 'Camara de Carga - Volume (m3)']))
+
+
+                    if dado_valido(cc_alt) or dado_valido(cc_vol):
+                        txt_cc = "**Câmara de Carga:**"
+                        if dado_valido(cc_alt): txt_cc += f" Altura: {cc_alt} m"
+                        if dado_valido(cc_vol): txt_cc += f" | Volume: {cc_vol} m³"
+                        st.write(txt_cc)
+
+
+                    pre_clor = buscar_campo_mult(row, ['Possui Pré-cloração', 'Possui Pre-cloracao'])
+                    if dado_valido(pre_clor): st.write(f"**Possui Pré-cloração:** {pre_clor}")
+
+
+                    prod_chem = buscar_campo_mult(row, ['Produto Químico Principal', 'Produto Quimico Principal'])
+                    if dado_valido(prod_chem): st.write(f"**Produtos Químicos:** {prod_chem}")
+
+
+                    link_maps_eta = obter_link_gmaps(row, df_geo=dados_geo, tipo_busca='eta')
+                    if link_maps_eta:
+                        st.markdown(f"<a href='{link_maps_eta}' target='_blank' class='link-maps-discreto'>📍 Ver no Google Maps</a>", unsafe_allow_html=True)
+
+
+                    obs_e = buscar_campo_mult(row, ['OBSERVAÇÕES', 'Observações', 'Obs', 'OBS'])
+                    if dado_valido(obs_e): st.info(f"**Obs:** {obs_e}")
+
+
+                    fotos_eta = extrair_lista_fotos(row, "eta")
+                    exibir_galeria_fotos(fotos_eta, legenda_base="ETA")
+
+
+                st.markdown("</div>", unsafe_allow_html=True)
+
+
+    # 2. Seção de Adutoras Interligadas
+    if not df_adutoras.empty:
+        c_origem = 'Município Origem'
+        c_destino = 'Município Destino'
+        dados_adu = df_adutoras[(df_adutoras[c_origem].astype(str).str.strip().str.upper() == municipio_selecionado) | (df_adutoras[c_destino].astype(str).str.strip().str.upper() == municipio_selecionado)] if c_origem in df_adutoras.columns else pd.DataFrame()
+
+
+        if not dados_adu.empty:
+            st.header("🔗 Sistemas Interligados / Adutoras de Exportação")
+            for _, row in dados_adu.iterrows():
+                diam_adu = formatar_valor(buscar_campo_mult(row, ['Diâmetro da Adutora (mm)']) or '—')
+                st.warning(f"🚨 **Atenção:** Sistema Interligado! Origem: {row[c_origem]} ➔ Destino: {row[c_destino]} | Diâmetro: {diam_adu}mm")
+
+
+    # 3. Seção de Poços Artesianos
+    if not dados_poc.empty:
+        st.header("💧 Sistema de Poços Artesianos (Captação Subterrânea)")
+        cols_pocos = st.columns(3)
+ 
+        idx = 0
+        for _, row in dados_poc.iterrows():
+            col_atual = cols_pocos[idx % 3]
+            with col_atual:
+                id_pocio = buscar_campo_mult(row, ['Identificação do Poço', 'Poço']) or '—'
+                st.markdown(f"<div class='card'><div class='card-title'>💧 {id_pocio}</div>", unsafe_allow_html=True)
+ 
+                loc_p = buscar_campo_mult(row, ['Localidade/Região', 'Localidade'])
+                if dado_valido(loc_p):
+                    st.write(f"**Região/Localidade:** {loc_p}")
+
+
+                cc_poco = formatar_valor(buscar_campo_mult(row, ['CC Equatorial', 'CC Equatorial Poço', 'CC Poço', 'CC', 'Código do Cliente', 'CC Equatorial (Poço)']))
+                if dado_valido(cc_poco): st.write(f"**⚡ CC Equatorial:** {cc_poco}")
+ 
+                pot_b = formatar_valor(buscar_campo_mult(row, ['Potência da Bomba (cv)', 'Potência (cv)']))
+                alt_b = formatar_valor(buscar_campo_mult(row, ['Altura da Bomba (mca)', 'Altura (mca)']))
+                vaz_b = formatar_valor(buscar_campo_mult(row, ['Vazão (m³/h)', 'Vazão']))
+ 
+                if dado_valido(pot_b): st.write(f"**Potência da Bomba:** {pot_b} cv")
+                if dado_valido(alt_b): st.write(f"**Altura da Bomba:** {alt_b} mca")
+                if dado_valido(vaz_b): st.write(f"**Vazão Cadastrada:** {vaz_b} m³/h")
+
+
+                link_maps_p = obter_link_gmaps(row, df_geo=dados_geo, tipo_busca='poc')
+                if link_maps_p:
+                    st.markdown(f"<a href='{link_maps_p}' target='_blank' class='link-maps-discreto'>📍 Ver no Google Maps</a>", unsafe_allow_html=True)
+
+
+                # Exibição das observações na interface
+                obs_p = buscar_campo_mult(row, ['OBSERVAÇÕES', 'Observações', 'Obs', 'OBS'])
+                if dado_valido(obs_p):
+                    st.info(f"**Obs:** {obs_p}")
+
+
+                fotos_poc = extrair_lista_fotos(row, "poc")
+                exibir_galeria_fotos(fotos_poc, legenda_base="Poço")
+ 
+                st.markdown("</div>", unsafe_allow_html=True)
+                idx += 1
+
+
+    if dados_cap.empty and dados_eta.empty and dados_poc.empty:
+        st.info("Nenhuma estrutura localizada para este município nos registros da planilha.")
+
+
+except Exception as e:
+    st.error(f"Erro na leitura dos dados: {e}")
+
